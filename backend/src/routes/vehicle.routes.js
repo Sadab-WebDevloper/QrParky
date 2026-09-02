@@ -1,0 +1,40 @@
+const express = require('express');
+const router = express.Router();
+const {
+  createVehicle,
+  getMyVehicles,
+  getSocietyVehicles,
+  approveVehicle,
+  rejectVehicle,
+  getVehicleQR,
+  revokeQRCode,
+  verifyQRToken,
+} = require('../controllers/vehicle.controller');
+const { authenticate } = require('../middleware/authMiddleware');
+const { authorize } = require('../middleware/rbacMiddleware');
+const validate = require('../middleware/validate');
+const { z } = require('zod');
+
+const vehicleSchema = z.object({
+  body: z.object({
+    vehicleNumber: z.string().min(3),
+    vehicleType: z.enum(['2wheeler', '4wheeler', 'other']),
+    documents: z.array(z.string()).optional(),
+  }),
+});
+
+// Member vehicle endpoints
+router.post('/member/vehicles', authenticate, authorize('member'), validate(vehicleSchema), createVehicle);
+router.get('/member/vehicles', authenticate, authorize('member'), getMyVehicles);
+router.get('/member/vehicles/:id/qr', authenticate, authorize('member'), getVehicleQR);
+
+// Society Admin vehicle endpoints
+router.get('/society-admin/vehicles', authenticate, authorize('society_admin', 'super_admin'), getSocietyVehicles);
+router.post('/society-admin/vehicles/:id/approve', authenticate, authorize('society_admin', 'super_admin'), approveVehicle);
+router.post('/society-admin/vehicles/:id/reject', authenticate, authorize('society_admin', 'super_admin'), rejectVehicle);
+router.post('/admin/vehicles/:id/qr/revoke', authenticate, authorize('society_admin', 'super_admin'), revokeQRCode);
+
+// Public Scanner / Security Guard verification endpoint
+router.get('/public/qr/verify/:token', verifyQRToken);
+
+module.exports = router;

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Primary Meta Tags -->
+    <title>QrParky — Smart Society Vehicle & Access Management</title>
+    <meta name="title" content="QrParky — Smart Society Vehicle & Access Management" />
+    <meta name="description" content="Eliminate unauthorized parking, manual logbooks, and forged stickers. QrParky provides automated resident onboarding, admin approvals, and tamper-proof QR vehicle windshield passes." />
+    <meta name="keywords" content="society parking, qr vehicle pass, smart gate pass, apartment parking management, resident vehicle sticker, qr gate security" />
+    <meta name="author" content="QrParky" />
+    <meta name="theme-color" content="#09090b" />
+
+    <!-- Open Graph / Facebook / WhatsApp / LinkedIn -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://qrparky.com/" />
+    <meta property="og:title" content="QrParky — Smart Society Vehicle & Access Management" />
+    <meta property="og:description" content="Smart, Encrypted Vehicle Access Passes for Modern Housing Societies. Instant QR generation, 1-click approvals, zero hardware required." />
+    <meta property="og:image" content="/og-image.svg" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://qrparky.com/" />
+    <meta property="twitter:title" content="QrParky — Smart Society Vehicle & Access Management" />
+    <meta property="twitter:description" content="Smart, Encrypted Vehicle Access Passes for Modern Housing Societies." />
+    <meta property="twitter:image" content="/og-image.svg" />
+
+    <!-- Google Fonts Inter & Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Zero-Flash Theme Init Script -->
+    <script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('qrparky-theme');
+          var isDark = stored === 'dark' || (!stored && !window.matchMedia('(prefers-color-scheme: light)').matches) || (stored === null);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.classList.remove('light');
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('light');
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Dgr_keU2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-MSwhu_y4.css">
+  </head>
+  <body class="bg-[#fafaf9] dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 font-['Plus_Jakarta_Sans',sans-serif] antialiased selection:bg-amber-500 selection:text-black min-h-screen">
+    <div id="root"></div>
+  </body>
+</html>

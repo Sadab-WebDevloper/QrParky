@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#09090b" />
+      <stop offset="50%" stop-color="#121214" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="30" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)" />
+  
+  <!-- Subtle Ambient Glow -->
+  <circle cx="200" cy="150" r="180" fill="#f59e0b" opacity="0.12" filter="url(#glow)" />
+  <circle cx="1000" cy="480" r="220" fill="#f59e0b" opacity="0.1" filter="url(#glow)" />
+
+  <!-- Logo Mark -->
+  <g transform="translate(100, 190)">
+    <rect width="180" height="180" rx="40" fill="#18181b" stroke="url(#gold)" stroke-width="6" />
+    
+    <!-- QR Bracket marks -->
+    <rect x="30" y="30" width="45" height="45" rx="8" fill="none" stroke="url(#gold)" stroke-width="7" />
+    <rect x="42" y="42" width="21" height="21" rx="4" fill="url(#gold)" />
+
+    <rect x="105" y="30" width="45" height="45" rx="8" fill="none" stroke="url(#gold)" stroke-width="7" />
+    <rect x="117" y="42" width="21" height="21" rx="4" fill="url(#gold)" />
+
+    <rect x="30" y="105" width="45" height="45" rx="8" fill="none" stroke="url(#gold)" stroke-width="7" />
+    <rect x="42" y="117" width="21" height="21" rx="4" fill="url(#gold)" />
+
+    <!-- Center Pass mark -->
+    <circle cx="127" cy="127" r="18" fill="url(#gold)" />
+  </g>
+
+  <!-- Typography -->
+  <text x="320" y="270" font-family="Plus Jakarta Sans, system-ui, sans-serif" font-size="76" font-weight="900" fill="url(#gold)" letter-spacing="-2">QrParky</text>
+  <text x="325" y="330" font-family="Plus Jakarta Sans, system-ui, sans-serif" font-size="28" font-weight="600" fill="#ffffff">Smart Society Vehicle &amp; Access Management</text>
+  
+  <!-- Feature Tagline Pills -->
+  <g transform="translate(325, 370)">
+    <rect width="200" height="44" rx="22" fill="#18181b" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4" />
+    <text x="100" y="28" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#fde047" text-anchor="middle">🛡️ TAMPER-PROOF QR</text>
+
+    <rect x="215" width="200" height="44" rx="22" fill="#18181b" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4" />
+    <text x="315" y="28" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#fde047" text-anchor="middle">⚡ INSTANT PASSES</text>
+
+    <rect x="430" width="220" height="44" rx="22" fill="#18181b" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4" />
+    <text x="540" y="28" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#fde047" text-anchor="middle">✨ ZERO HARDWARE</text>
+  </g>
+</svg>
