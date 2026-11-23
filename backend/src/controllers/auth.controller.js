@@ -1,10 +1,16 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const config = require('../config/env');
 const { User, Society } = require('../models');
 const { logAudit } = require('../utils/auditLogger');
+const { sendPasswordResetEmail } = require('../utils/emailService');
+const { recordSuspiciousAttempt } = require('../middleware/rateLimiter');
+const logger = require('../utils/logger');
+const { ROLES } = require('../config/constants');
 
-const { ROLES, ROLE_NAMES } = require('../config/constants');
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_TIME_MS = 15 * 60 * 1000; // 15 minutes lockout
 
 const generateTokens = (user) => {
   const accessToken = jwt.sign(
@@ -25,6 +31,7 @@ const generateTokens = (user) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
 
     const user = await User.findOne({
       where: { email },
@@ -32,14 +39,102 @@ const login = async (req, res, next) => {
     });
 
     if (!user) {
+      await recordSuspiciousAttempt(ip, { email, reason: 'unknown_user_attempt' });
+      await logAudit({
+        actorRole: 'unauthenticated',
+        action: 'login_failed_unknown_email',
+        targetType: 'user',
+        metadata: { email, ip },
+        ipAddress: ip,
+      });
       return res.status(401).json({ success: false, message: 'Invalid credentials.' });
     }
 
+    // 1. Check if Account is Currently Locked
+    if (user.lockUntil && new Date() < new Date(user.lockUntil)) {
+      const minutesRemaining = Math.ceil((new Date(user.lockUntil) - new Date()) / 60000);
+      await recordSuspiciousAttempt(ip, { userId: user.id, email, reason: 'attempt_while_locked' });
+      await logAudit({
+        actorId: user.id,
+        actorRole: user.role,
+        action: 'malicious_activity_locked_login_attempt',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: { minutesRemaining, ip },
+        ipAddress: ip,
+      });
+
+      return res.status(423).json({
+        success: false,
+        locked: true,
+        minutesRemaining,
+        code: 'ACCOUNT_LOCKED',
+        message: `Account is temporarily locked due to suspicious activity (multiple failed attempts). Please try again in ${minutesRemaining} minute(s).`,
+      });
+    }
+
+    // 2. Validate Password
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
+      const attempts = (user.failedLoginAttempts || 0) + 1;
+      const willLock = attempts >= MAX_FAILED_ATTEMPTS;
+      const lockUntil = willLock ? new Date(Date.now() + LOCK_TIME_MS) : null;
+
+      await user.update({
+        failedLoginAttempts: attempts,
+        lockUntil: lockUntil || user.lockUntil,
+      });
+
+      await recordSuspiciousAttempt(ip, { userId: user.id, email, attempts });
+
+      if (willLock) {
+        logger.warn(`[SECURITY ALERT] Account locked for user: ${user.email} (IP: ${ip}) due to ${attempts} failed attempts.`);
+        await logAudit({
+          actorId: user.id,
+          actorRole: user.role,
+          action: 'account_locked_suspicious_activity',
+          targetType: 'user',
+          targetId: user.id,
+          metadata: { failedAttempts: attempts, lockedUntil: lockUntil, ip },
+          ipAddress: ip,
+        });
+
+        return res.status(423).json({
+          success: false,
+          locked: true,
+          minutesRemaining: 15,
+          code: 'ACCOUNT_LOCKED',
+          message: 'Malicious activity alert: 5 consecutive failed login attempts detected. Your account has been temporarily locked for 15 minutes for your protection.',
+        });
+      }
+
+      const remainingAttempts = MAX_FAILED_ATTEMPTS - attempts;
+      await logAudit({
+        actorId: user.id,
+        actorRole: user.role,
+        action: 'login_failed',
+        targetType: 'user',
+        targetId: user.id,
+        metadata: { failedAttempts: attempts, remainingAttempts, ip },
+        ipAddress: ip,
+      });
+
+      return res.status(401).json({
+        success: false,
+        attemptsRemaining,
+        message: `Invalid credentials. ${remainingAttempts} attempt(s) remaining before temporary account lockout.`,
+      });
     }
 
+    // 3. Password matched -> Reset failed attempts & unlock account
+    if (user.failedLoginAttempts > 0 || user.lockUntil) {
+      await user.update({
+        failedLoginAttempts: 0,
+        lockUntil: null,
+      });
+    }
+
+    // 4. Check account status approval
     if (user.status !== 'approved' && user.role !== ROLES.SUPER_ADMIN) {
       return res.status(403).json({
         success: false,
@@ -47,9 +142,8 @@ const login = async (req, res, next) => {
       });
     }
 
+    // 5. Generate and store tokens
     const { accessToken, refreshToken } = generateTokens(user);
-    
-    // Save hashed refresh token for rotation security
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     await user.update({ refreshTokenHash });
 
@@ -59,6 +153,7 @@ const login = async (req, res, next) => {
       action: 'user_login',
       targetType: 'user',
       targetId: user.id,
+      ipAddress: ip,
     });
 
     res.json({
@@ -150,4 +245,122 @@ const getMe = async (req, res, next) => {
   }
 };
 
-module.exports = { login, refresh, logout, getMe };
+/**
+ * Forgot Password: Request a time-limited reset link
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+
+    const user = await User.findOne({ where: { email } });
+
+    // Always return success message to prevent user enumeration
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been dispatched.',
+      });
+    }
+
+    // Generate random 32-byte cryptographic token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour validity
+
+    await user.update({
+      passwordResetToken: resetToken,
+      passwordResetExpiry: resetExpiry,
+    });
+
+    await logAudit({
+      actorId: user.id,
+      actorRole: user.role,
+      action: 'password_reset_requested',
+      targetType: 'user',
+      targetId: user.id,
+      metadata: { ip },
+      ipAddress: ip,
+    });
+
+    // Send reset email non-blocking
+    sendPasswordResetEmail({
+      userEmail: user.email,
+      userName: user.name,
+      resetToken,
+    }).catch((err) => logger.error(`Failed to send password reset email: ${err.message}`));
+
+    res.json({
+      success: true,
+      message: 'If an account exists with this email, a password reset link has been dispatched.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Reset Password: Submit new password using valid reset token
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Token and new password are required.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
+    }
+
+    const user = await User.findOne({
+      where: { passwordResetToken: token },
+    });
+
+    if (!user || !user.passwordResetExpiry || new Date() > new Date(user.passwordResetExpiry)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired password reset link. Please request a new one.',
+      });
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password, clear reset tokens, reset lockout counters, revoke old sessions
+    await user.update({
+      passwordHash: newPasswordHash,
+      passwordResetToken: null,
+      passwordResetExpiry: null,
+      failedLoginAttempts: 0,
+      lockUntil: null,
+      refreshTokenHash: null,
+    });
+
+    await logAudit({
+      actorId: user.id,
+      actorRole: user.role,
+      action: 'password_reset_success',
+      targetType: 'user',
+      targetId: user.id,
+      metadata: { ip },
+      ipAddress: ip,
+    });
+
+    res.json({
+      success: true,
+      message: 'Your password has been reset successfully. You can now log in with your new credentials.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  login,
+  refresh,
+  logout,
+  getMe,
+  forgotPassword,
+  resetPassword,
+};

@@ -52,7 +52,7 @@ const sendMail = async ({ to, subject, html, text }) => {
 };
 
 /**
- * Common Luxury Email Layout Wrapper
+ * Common Luxury Email Layout Wrapper (Gold, Ivory & Dark Neutral)
  */
 const renderEmailLayout = ({ preheader, title, badge, content }) => {
   return `
@@ -99,8 +99,8 @@ const renderEmailLayout = ({ preheader, title, badge, content }) => {
 
           <!-- Footer -->
           <div class="footer">
-            <p style="margin: 0 0 6px 0; color: #78716c; font-weight: 600;">QrParky • Bank-Grade Encrypted Gate Access</p>
-            <p style="margin: 0; font-size: 11px;">© ${new Date().getFullYear()} QrParky Platform. All rights reserved.</p>
+            <p style="margin: 0 0 6px 0; font-weight: 600; color: #78716c;">QrParky Vehicle Access Security Infrastructure</p>
+            <p style="margin: 0; font-size: 11px;">This is an automated system notification. Please do not reply directly to this email.</p>
           </div>
 
         </div>
@@ -111,39 +111,42 @@ const renderEmailLayout = ({ preheader, title, badge, content }) => {
 };
 
 /**
- * 1. Society Application Submitted / Received
+ * 1. Society Application Received (Public Onboarding)
  */
 const sendSocietyApplicationReceivedEmail = async ({ applicantEmail, applicantName, societyName, address }) => {
-  const subject = `QrParky — Application Received for ${societyName}`;
-  const text = `Hello ${applicantName},\n\nWe have received your society onboarding application for "${societyName}" (${address}).\n\nYour application is currently under review by our Super Admin team. Once approved, you will receive an email with your Society Admin login credentials and Member onboarding invite link.\n\nThank you,\nTeam QrParky`;
-  
+  const subject = `Society Onboarding Application Received: ${societyName} - QrParky`;
+  const text = `Hello ${applicantName},\n\nThank you for registering "${societyName}" with QrParky. We have received your society onboarding application and our team is currently verifying the details.\n\nSociety Name: ${societyName}\nAddress: ${address}\n\nOnce verified, you will receive temporary administrator credentials to manage your society gate passes.\n\nBest regards,\nTeam QrParky`;
+
   const content = `
     <div class="alert-box">
-      <div style="font-size: 15px; font-weight: 800; color: #b45309; margin-bottom: 4px;">Application Received 📋</div>
-      <div style="font-size: 13px; color: #57534e; line-height: 1.5;">
-        Hello <strong>${applicantName}</strong>, your onboarding application for <strong>${societyName}</strong> is submitted and is being processed.
+      <div style="font-size: 15px; font-weight: 800; color: #92400e; margin-bottom: 4px;">Application Under Verification</div>
+      <div style="font-size: 13px; color: #78350f; line-height: 1.5;">
+        Thank you <strong>${applicantName}</strong>! Your society onboarding request has been successfully submitted and is under verification by our security team.
       </div>
     </div>
 
     <div class="info-card">
+      <div style="font-size: 11px; font-weight: 700; color: #78716c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+        Application Summary
+      </div>
       <table class="info-table">
         <tr>
           <td class="info-label">Society Name:</td>
           <td class="info-value">${societyName}</td>
         </tr>
         <tr>
-          <td class="info-label">Address:</td>
-          <td class="info-value" style="font-weight: 500;">${address}</td>
+          <td class="info-label">Physical Address:</td>
+          <td class="info-value">${address}</td>
         </tr>
         <tr>
-          <td class="info-label">Current Status:</td>
-          <td><span style="background-color: #fef3c7; color: #b45309; padding: 3px 10px; border-radius: 20px; font-weight: 800; font-size: 11px; text-transform: uppercase;">Under Super Admin Review</span></td>
+          <td class="info-label">Administrator:</td>
+          <td class="info-value">${applicantName} (${applicantEmail})</td>
         </tr>
       </table>
     </div>
 
-    <p style="font-size: 13px; color: #57534e; line-height: 1.6; margin: 0 0 16px 0;">
-      Our verification team will review your society application shortly. Once approved, temporary Society Administrator credentials will be dispatched directly to your inbox.
+    <p style="font-size: 13px; color: #57534e; line-height: 1.6; margin: 0;">
+      Upon approval, you will receive an official activation email containing your administrative credentials and unique member invite link.
     </p>
   `;
 
@@ -156,27 +159,33 @@ const sendSocietyApplicationReceivedEmail = async ({ applicantEmail, applicantNa
 };
 
 /**
- * 2. Society Application Approved (With Credentials & Invite Link)
+ * 2. Society Approved + Credentials Generated
  */
-const sendSocietyApprovedEmail = async ({ applicantEmail, applicantName, societyName, loginEmail, temporaryPassword, inviteLinkToken }) => {
+const sendSocietyApprovedEmail = async ({
+  applicantEmail,
+  applicantName,
+  societyName,
+  loginEmail,
+  temporaryPassword,
+  inviteLinkToken,
+}) => {
   const loginUrl = `${config.frontendUrl}/login`;
   const inviteUrl = `${config.frontendUrl}/register/${inviteLinkToken}`;
-
-  const subject = `🎉 Congratulations! "${societyName}" Approved - QrParky Admin Access`;
-  const text = `Hello ${applicantName},\n\nGreat news! Your society "${societyName}" has been APPROVED on QrParky.\n\nYOUR SOCIETY ADMIN LOGIN CREDENTIALS:\nLogin URL: ${loginUrl}\nEmail: ${loginEmail}\nPassword: ${temporaryPassword}\n\nSOCIETY MEMBER INVITE LINK (Share with residents):\n${inviteUrl}\n\nPlease login and change your password in the dashboard.\n\nThank you,\nTeam QrParky`;
+  const subject = `🎉 Approved! Society Portal Credentials for ${societyName} - QrParky`;
+  const text = `Hello ${applicantName},\n\nCongratulations! Your housing society "${societyName}" has been approved on QrParky.\n\nLogin URL: ${loginUrl}\nEmail: ${loginEmail}\nTemporary Password: ${temporaryPassword}\n\nResident Invite Link: ${inviteUrl}\n\nPlease sign in and share the invite link with your society members.\n\nTeam QrParky`;
 
   const content = `
-    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px;">
-      <div style="font-size: 15px; font-weight: 800; color: #15803d; margin-bottom: 4px;">🎉 Application Approved!</div>
-      <div style="font-size: 13px; color: #166534; line-height: 1.5;">
-        Hello <strong>${applicantName}</strong>, your society <strong>${societyName}</strong> has been officially approved. Your administrative portal is ready.
+    <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-left: 4px solid #10b981; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px;">
+      <div style="font-size: 16px; font-weight: 800; color: #065f46; margin-bottom: 4px;">🎉 Society Approved & Activated!</div>
+      <div style="font-size: 13px; color: #047857; line-height: 1.5;">
+        Congratulations <strong>${applicantName}</strong>! Your society <strong>${societyName}</strong> has been approved. Your administrative portal is now ready.
       </div>
     </div>
 
-    <!-- Credentials Box -->
-    <div style="background: linear-gradient(135deg, #fffdf8 0%, #faf6ec 100%); border: 1px solid #fde68a; border-radius: 14px; padding: 22px; margin-bottom: 24px;">
-      <div style="font-size: 13px; font-weight: 800; color: #b45309; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px;">
-        🔑 Society Admin Login Credentials
+    <!-- Credentials Card -->
+    <div class="info-card">
+      <div style="font-size: 11px; font-weight: 700; color: #78716c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+        🔑 Administrator Login Credentials
       </div>
       <table class="info-table">
         <tr>
@@ -253,8 +262,129 @@ const sendSocietyRejectedEmail = async ({ applicantEmail, applicantName, society
   return sendMail({ to: applicantEmail, subject, text, html });
 };
 
+/**
+ * 4. Super Admin Notification: Member Selected / Paid for Professional (Premium ₹499) Pass
+ */
+const sendPremiumPassNotificationToSuperAdmin = async ({
+  superAdminEmail = 'superadmin@qrparky.com',
+  societyName,
+  memberName,
+  memberEmail,
+  memberPhone,
+  vehicleNumber,
+  vehicleType,
+  fee = '₹499',
+  status = 'Approved / Awaiting Fulfillment',
+}) => {
+  const subject = `👑 New Professional Pass (₹499): ${vehicleNumber} - ${societyName}`;
+  const text = `Super Admin Alert:\n\nA new Professional / Premium Pass (₹499) has been selected/ordered!\n\nSociety: ${societyName}\nMember: ${memberName} (${memberEmail} | ${memberPhone})\nVehicle: ${vehicleNumber} (${vehicleType})\nFee: ${fee}\nStatus: ${status}\n\nPlease check the Super Admin dashboard for fulfillment.`;
+
+  const content = `
+    <div style="background-color: #fffdf5; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px;">
+      <div style="font-size: 16px; font-weight: 800; color: #92400e; margin-bottom: 4px;">👑 Premium Pass Request Notification</div>
+      <div style="font-size: 13px; color: #78350f; line-height: 1.5;">
+        A resident has registered / paid for a <strong>Professional Holographic Windshield Pass (₹499)</strong>.
+      </div>
+    </div>
+
+    <div class="info-card">
+      <div style="font-size: 11px; font-weight: 700; color: #78716c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+        Pass & Vehicle Details
+      </div>
+      <table class="info-table">
+        <tr>
+          <td class="info-label">Society:</td>
+          <td class="info-value">${societyName}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Vehicle Plate:</td>
+          <td class="info-value" style="font-family: monospace; font-size: 15px; color: #b45309;">${vehicleNumber}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Vehicle Category:</td>
+          <td class="info-value" style="text-transform: capitalize;">${vehicleType}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Pass Tier & Fee:</td>
+          <td class="info-value" style="color: #d97706; font-weight: 800;">💎 Professional Pass (${fee})</td>
+        </tr>
+        <tr>
+          <td class="info-label">Resident Member:</td>
+          <td class="info-value">${memberName}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Contact:</td>
+          <td class="info-value">${memberEmail} | ${memberPhone || 'N/A'}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Status:</td>
+          <td class="info-value">${status}</td>
+        </tr>
+      </table>
+
+      <div style="text-align: center; margin-top: 20px;">
+        <a href="${config.frontendUrl}/admin/dashboard" class="btn-gold">
+          Open Super Admin Portal →
+        </a>
+      </div>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    title: subject,
+    content,
+  });
+
+  return sendMail({ to: superAdminEmail, subject, text, html });
+};
+
+/**
+ * 5. Password Reset Request Email
+ */
+const sendPasswordResetEmail = async ({ userEmail, userName, resetToken }) => {
+  const resetUrl = `${config.frontendUrl}/reset-password/${resetToken}`;
+  const subject = '🔒 QrParky — Password Reset Request';
+  const text = `Hello ${userName},\n\nA password reset request was made for your QrParky account.\nClick the link below to set a new password:\n${resetUrl}\n\nThis link is valid for 1 hour. If you did not request this, please ignore this email.`;
+
+  const content = `
+    <h2 style="font-size: 20px; font-weight: 800; color: #1c1917; margin: 0 0 12px;">Reset Your Account Password</h2>
+    <p style="font-size: 14px; color: #57534e; line-height: 1.6; margin: 0 0 20px;">
+      Hello <strong>${userName}</strong>, we received a request to reset the password associated with your account (<strong>${userEmail}</strong>).
+    </p>
+
+    <div class="alert-box" style="border-left-color: #d97706;">
+      <p style="margin: 0; font-size: 13px; color: #92400e; font-weight: 600;">
+        ⏱️ This password reset link is time-sensitive and expires in <strong>60 minutes</strong>.
+      </p>
+    </div>
+
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="${resetUrl}" class="btn-gold" style="padding: 14px 32px; font-size: 15px;">
+        Reset Account Password →
+      </a>
+    </div>
+
+    <p style="font-size: 12px; color: #78716c; line-height: 1.5; margin: 24px 0 0; border-top: 1px solid #f3eedf; pt: 16px;">
+      If button doesn't work, copy and paste this link into your browser:<br />
+      <span style="font-family: monospace; color: #b45309; word-break: break-all;">${resetUrl}</span>
+    </p>
+    <p style="font-size: 12px; color: #a8a29e; margin-top: 12px;">
+      If you did not request a password reset, you can safely ignore this email. Your current password remains secure.
+    </p>
+  `;
+
+  const html = renderEmailLayout({
+    title: subject,
+    content,
+  });
+
+  return sendMail({ to: userEmail, subject, text, html });
+};
+
 module.exports = {
   sendSocietyApplicationReceivedEmail,
   sendSocietyApprovedEmail,
   sendSocietyRejectedEmail,
+  sendPremiumPassNotificationToSuperAdmin,
+  sendPasswordResetEmail,
 };

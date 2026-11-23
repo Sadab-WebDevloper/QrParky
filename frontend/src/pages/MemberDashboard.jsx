@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
-import { Car, Plus, QrCode, CreditCard, CheckCircle2, AlertCircle, Clock, ShieldAlert, Download, RefreshCw } from 'lucide-react';
+import { Car, Plus, QrCode, CreditCard, CheckCircle2, AlertCircle, Clock, ShieldAlert, Download, RefreshCw, Copy, FileText, Paperclip } from 'lucide-react';
 
 export default function MemberDashboard() {
+  const { user } = useAuth();
   const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,6 +17,8 @@ export default function MemberDashboard() {
   const [vehicleType, setVehicleType] = useState('4wheeler');
   const [passType, setPassType] = useState('regular'); // 'regular' or 'professional'
   const [registering, setRegistering] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState(null);
+  const [documentName, setDocumentName] = useState('');
 
   // Batch Payment State
   const [selectedVehicleIds, setSelectedVehicleIds] = useState([]);
@@ -43,6 +47,21 @@ export default function MemberDashboard() {
     fetchVehicles();
   }, []);
 
+  const handleDocumentChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be under 5MB.');
+      return;
+    }
+    setDocumentName(file.name);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setDocumentPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleRegisterVehicle = async (e) => {
     e.preventDefault();
     setRegistering(true);
@@ -51,6 +70,7 @@ export default function MemberDashboard() {
         vehicleNumber: vehicleNumber.toUpperCase().trim(),
         vehicleType,
         passType,
+        documents: documentPreview ? [documentPreview] : [],
       });
 
       if (res.data.success) {
@@ -61,6 +81,8 @@ export default function MemberDashboard() {
         );
         setVehicleNumber('');
         setPassType('regular');
+        setDocumentPreview(null);
+        setDocumentName('');
         setIsAddOpen(false);
         fetchVehicles();
       }
@@ -79,6 +101,68 @@ export default function MemberDashboard() {
     }
   };
 
+  const launchRazorpayPayment = (orderData) => {
+    if (!orderData) return;
+
+    if (window.Razorpay && !orderData.isMock && !orderData.razorpayOrderId?.startsWith('order_mock_')) {
+      const options = {
+        key: orderData.keyId || 'rzp_test_TX9G3UI1BflzE4',
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        name: 'QrParky',
+        description: 'Vehicle QR Pass Activation',
+        image: '/favicon.svg',
+        order_id: orderData.razorpayOrderId,
+        handler: async function (response) {
+          setProcessingPayment(true);
+          try {
+            const verifyRes = await API.post('/webhooks/razorpay', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+
+            if (verifyRes.data.success) {
+              toast.success('🎉 Payment verified! Vehicles activated and QR passes generated.');
+              setCheckoutModalOpen(false);
+              setSelectedVehicleIds([]);
+              fetchVehicles();
+            } else {
+              toast.error(verifyRes.data.message || 'Payment verification failed.');
+            }
+          } catch (err) {
+            toast.error(err.response?.data?.message || 'Payment verification failed.');
+          } finally {
+            setProcessingPayment(false);
+          }
+        },
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+          contact: user?.phone || '',
+        },
+        theme: {
+          color: '#f59e0b',
+        },
+        modal: {
+          ondismiss: function () {
+            setProcessingPayment(false);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        toast.error(response.error?.description || 'Payment failed.');
+        setProcessingPayment(false);
+      });
+      rzp.open();
+    } else {
+      // Fallback to in-app simulated checkout modal for mock mode or offline testing
+      setCheckoutModalOpen(true);
+    }
+  };
+
   const handleInitiateBatchPayment = async () => {
     if (selectedVehicleIds.length === 0) {
       toast.error('Please select at least one vehicle awaiting payment.');
@@ -88,16 +172,16 @@ export default function MemberDashboard() {
     try {
       const idempotencyKey = `idempotent_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       const res = await API.post('/member/orders', {
-        vehicleIds: selectedVehicleIds,
+        vehicleIds: selectedVehicleIds.map(Number),
         idempotencyKey,
       });
 
       if (res.data.success) {
         setCreatedOrderData(res.data.data);
-        setCheckoutModalOpen(true);
+        launchRazorpayPayment(res.data.data);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to initiate order.');
+      toast.error(err.response?.data?.message || err.message || 'Failed to initiate order.');
     }
   };
 
@@ -116,13 +200,13 @@ export default function MemberDashboard() {
       const webhookRes = await API.post('/webhooks/razorpay', mockPaymentPayload);
 
       if (webhookRes.data.success) {
-        toast.success('Payment verified! Vehicles activated and QR codes generated.');
+        toast.success('🎉 Payment verified! Vehicles activated and QR codes generated.');
         setCheckoutModalOpen(false);
         setSelectedVehicleIds([]);
         fetchVehicles();
       }
     } catch (err) {
-      toast.error('Payment verification failed.');
+      toast.error(err.response?.data?.message || 'Payment verification failed.');
     } finally {
       setProcessingPayment(false);
     }
@@ -221,7 +305,7 @@ export default function MemberDashboard() {
                     <td className="px-6 py-4 text-xs">
                       {v.passType === 'professional' ? (
                         <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800 font-bold">
-                          💎 Professional (₹299)
+                          💎 Professional (₹499)
                         </span>
                       ) : (
                         <span className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-[#18181b] text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/60 font-bold">
@@ -277,9 +361,10 @@ export default function MemberDashboard() {
               type="text"
               required
               value={vehicleNumber}
-              onChange={(e) => setVehicleNumber(e.target.value)}
+              onChange={(e) => setVehicleNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
               placeholder="e.g. MH02AB1234"
-              className="w-full px-4 py-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition"
+              style={{ textTransform: 'uppercase' }}
+              className="w-full px-4 py-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition uppercase"
             />
           </div>
 
@@ -331,7 +416,7 @@ export default function MemberDashboard() {
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs text-zinc-900 dark:text-white">💎 Professional</span>
-                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">₹299 Fee</span>
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">₹499 Fee</span>
                 </div>
                 <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
                   Premium holographic pass + printable windshield sticker.
@@ -340,13 +425,49 @@ export default function MemberDashboard() {
             </div>
           </div>
 
+          {/* RC / Vehicle Certificate Upload */}
+          <div>
+            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-2">
+              Vehicle Registration Certificate / RC Book (Optional)
+            </label>
+            <div className="flex items-center gap-3">
+              <label className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-amber-500 bg-zinc-50 dark:bg-[#18181b] cursor-pointer text-xs text-zinc-600 dark:text-zinc-300 transition">
+                <FileText className="w-4 h-4 text-amber-500" />
+                <span className="truncate max-w-[200px]">{documentName || 'Attach RC Document / Photo'}</span>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={handleDocumentChange}
+                  className="hidden"
+                />
+              </label>
+              {documentPreview && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocumentPreview(null);
+                    setDocumentName('');
+                  }}
+                  className="px-3 py-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 hover:bg-rose-200 text-xs font-bold"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {documentPreview && (
+              <div className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> File attached & ready for submission
+              </div>
+            )}
+          </div>
+
           <div className="pt-2">
             <button
               type="submit"
               disabled={registering}
               className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 font-bold text-sm hover:opacity-95 shadow-lg shadow-amber-500/20 transition disabled:opacity-50"
             >
-              {registering ? 'Submitting...' : passType === 'regular' ? 'Submit for Free Regular Pass' : 'Submit for Professional Pass (₹299)'}
+              {registering ? 'Submitting...' : passType === 'regular' ? 'Submit for Free Regular Pass' : 'Submit for Professional Pass (₹499)'}
             </button>
           </div>
         </form>
@@ -385,27 +506,63 @@ export default function MemberDashboard() {
       {/* Modal 3: Digital Encrypted QR Vault Pass */}
       <Modal isOpen={!!activeQRData} onClose={() => setActiveQRData(null)} title="Official Society Access QR Pass">
         {activeQRData && (
-          <div className="text-center space-y-4">
-            <div className="p-4 rounded-2xl bg-white max-w-[260px] mx-auto shadow-2xl border-4 border-amber-400">
-              <img src={activeQRData.qrImageUrl} alt="Society QR Pass" className="w-full h-auto rounded-lg" />
+          <div className="space-y-3.5 text-center">
+            
+            {/* Digital Pass Card */}
+            <div className="relative rounded-2xl p-4 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-[#18181b] dark:to-[#121214] border border-amber-400/40 dark:border-amber-500/30 shadow-lg text-center">
+              
+              <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-2.5 mb-3">
+                <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider bg-amber-100 dark:bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-300 dark:border-amber-800/60">
+                  {activeQRData.societyName || 'Official Pass'}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800/60">
+                  ● ACTIVE PASS
+                </span>
+              </div>
+
+              <div className="mb-3">
+                <div className="text-xl font-black font-mono tracking-wider text-zinc-900 dark:text-white">
+                  {activeQRData.vehicleNumber}
+                </div>
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 capitalize font-medium">
+                  {activeQRData.vehicleType} Access Pass
+                </div>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl max-w-[170px] mx-auto shadow-inner border border-zinc-200">
+                <img src={activeQRData.qrImageUrl} alt="Society QR Pass" className="w-full h-auto rounded" />
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
+                <span>🛡️ Verified Windshield Pass</span>
+                <span>QP-{new Date().getFullYear()}</span>
+              </div>
             </div>
 
-            <div>
-              <h3 className="text-2xl font-black text-zinc-900 dark:text-white font-mono">{activeQRData.vehicleNumber}</h3>
-              <p className="text-zinc-500 dark:text-zinc-400 text-xs capitalize">{activeQRData.vehicleType} Access Pass</p>
-            </div>
-
-            <div className="p-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-[11px] font-mono text-amber-600 dark:text-amber-400 break-all text-left">
-              <span className="text-zinc-400 dark:text-zinc-500 uppercase font-bold block mb-1">Encrypted Payload Token:</span>
-              {activeQRData.payloadEncrypted}
+            {/* Compact Token Box */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-[11px] font-mono text-zinc-500">
+              <span className="truncate max-w-[260px] text-left">
+                Token: <strong className="text-amber-600 dark:text-amber-400">{activeQRData.payloadEncrypted}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(activeQRData.payloadEncrypted);
+                  toast.success('Signature token copied!');
+                }}
+                className="p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 shrink-0 cursor-pointer"
+                title="Copy Signature Token"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             <a
               href={activeQRData.qrImageUrl}
               download={`QRParky_${activeQRData.vehicleNumber}.png`}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 font-bold text-sm hover:opacity-95 shadow-md shadow-amber-500/20 transition inline-flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 font-bold text-xs hover:opacity-95 shadow-md shadow-amber-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Download className="w-4 h-4" /> Download QR Sticker Image
+              <Download className="w-4 h-4" /> Download QR Sticker (PNG)
             </a>
           </div>
         )}

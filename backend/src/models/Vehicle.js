@@ -33,7 +33,7 @@ const Vehicle = sequelize.define('Vehicle', {
     defaultValue: '4wheeler',
   },
   documents: {
-    type: DataTypes.JSON, // Array of proof URL strings
+    type: DataTypes.JSON,
     allowNull: true,
     defaultValue: [],
   },
@@ -57,13 +57,7 @@ const Vehicle = sequelize.define('Vehicle', {
   },
 }, {
   tableName: 'vehicles',
-  paranoid: true, // soft delete deleted_at
-  indexes: [
-    { fields: ['member_id'] },
-    { fields: ['society_id'] },
-    { fields: ['society_id', 'status'] },
-    { fields: ['society_id', 'vehicle_number'], unique: true },
-  ],
+  paranoid: true,
 });
 
 module.exports = Vehicle;

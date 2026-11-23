@@ -2,6 +2,7 @@ const { Vehicle, QRCode, User, Society } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/cryptoUtils');
 const { generateQRDataUrl } = require('../utils/qrGenerator');
 const { logAudit } = require('../utils/auditLogger');
+const { sendPremiumPassNotificationToSuperAdmin } = require('../utils/emailService');
 
 /**
  * Use Case 3: Member submits vehicle registration
@@ -47,6 +48,22 @@ const createVehicle = async (req, res, next) => {
       targetId: vehicle.id,
       metadata: { vehicleNumber: normalizedNum, vehicleType, passType },
     });
+
+    // If member chose Professional (Premium) pass, notify Super Admin immediately
+    if (vehicle.passType === 'professional') {
+      const society = await Society.findByPk(societyId);
+      const member = await User.findByPk(memberId);
+      sendPremiumPassNotificationToSuperAdmin({
+        societyName: society?.name || 'Housing Society',
+        memberName: member?.name || req.user.name,
+        memberEmail: member?.email || req.user.email,
+        memberPhone: member?.phone || req.user.phone,
+        vehicleNumber: normalizedNum,
+        vehicleType,
+        fee: '₹499',
+        status: 'Submitted by Member (Pending Society Admin Approval)',
+      }).catch(() => {});
+    }
 
     res.status(201).json({
       success: true,
@@ -212,6 +229,20 @@ const approveVehicle = async (req, res, next) => {
         metadata: { passType: 'professional', status: 'awaiting_payment' },
       });
 
+      // Notify Super Admin that vehicle was approved for Professional Pass and awaits payment
+      const society = await Society.findByPk(vehicle.societyId);
+      const member = await User.findByPk(vehicle.memberId);
+      sendPremiumPassNotificationToSuperAdmin({
+        societyName: society?.name || 'Housing Society',
+        memberName: member?.name || 'Member',
+        memberEmail: member?.email || 'N/A',
+        memberPhone: member?.phone || 'N/A',
+        vehicleNumber: vehicle.vehicleNumber,
+        vehicleType: vehicle.vehicleType,
+        fee: '₹499',
+        status: 'Approved by Society Admin (Awaiting Member Payment)',
+      }).catch(() => {});
+
       return res.json({
         success: true,
         message: 'Vehicle approved for Professional Pass. Member can now complete checkout to activate.',
@@ -260,24 +291,39 @@ const rejectVehicle = async (req, res, next) => {
 };
 
 /**
- * Member: Get vehicle QR Vault access (ONLY if vehicle status = active)
+ * Member / Society Admin / Super Admin: Get vehicle QR Vault access (ONLY if vehicle status = active)
  */
 const getVehicleQR = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const where = { id };
+
+    if (req.user.role === 3) {
+      // Member can only access their own vehicle QR
+      where.memberId = req.user.id;
+    } else if (req.user.role === 2) {
+      // Society Admin can access any vehicle QR in their society
+      where.societyId = req.user.societyId;
+    }
+    // Super Admin (role === 1) can access any vehicle QR
+
     const vehicle = await Vehicle.findOne({
-      where: { id, memberId: req.user.id },
-      include: [{ model: QRCode, as: 'qrCode' }],
+      where,
+      include: [
+        { model: QRCode, as: 'qrCode' },
+        { model: User, as: 'owner', attributes: ['id', 'name', 'email', 'phone'] },
+        { model: Society, as: 'society', attributes: ['id', 'name'] },
+      ],
     });
 
     if (!vehicle) {
-      return res.status(404).json({ success: false, message: 'Vehicle not found.' });
+      return res.status(404).json({ success: false, message: 'Vehicle not found or not in your society.' });
     }
 
     if (vehicle.status !== 'active') {
       return res.status(403).json({
         success: false,
-        message: `QR code vault is restricted. Vehicle status is '${vehicle.status}'. Activation requires payment verification.`,
+        message: `QR code vault is restricted. Vehicle status is '${vehicle.status}'. Activation requires approval/payment verification.`,
       });
     }
 
@@ -288,8 +334,13 @@ const getVehicleQR = async (req, res, next) => {
     res.json({
       success: true,
       data: {
+        vehicleId: vehicle.id,
         vehicleNumber: vehicle.vehicleNumber,
         vehicleType: vehicle.vehicleType,
+        passType: vehicle.passType,
+        ownerName: vehicle.owner?.name || 'Resident',
+        ownerPhone: vehicle.owner?.phone || '',
+        societyName: vehicle.society?.name || 'Society',
         qrImageUrl: vehicle.qrCode.qrImageUrl,
         payloadEncrypted: vehicle.qrCode.payloadEncrypted,
         generatedAt: vehicle.qrCode.generatedAt,

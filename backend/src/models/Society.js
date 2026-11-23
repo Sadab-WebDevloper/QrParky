@@ -47,11 +47,7 @@ const Society = sequelize.define('Society', {
   },
 }, {
   tableName: 'societies',
-  paranoid: false, // Societies hard kept for historical reference or track
-  indexes: [
-    { fields: ['invite_link_token'], unique: true },
-    { fields: ['status'] },
-  ],
+  paranoid: false,
 });
 
 module.exports = Society;

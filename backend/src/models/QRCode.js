@@ -21,7 +21,7 @@ const QRCode = sequelize.define('QRCode', {
     allowNull: false,
   },
   qrImageUrl: {
-    type: DataTypes.TEXT('long'), // Base64 data URL string
+    type: DataTypes.TEXT('long'),
     allowNull: false,
   },
   isActive: {
@@ -45,9 +45,6 @@ const QRCode = sequelize.define('QRCode', {
 }, {
   tableName: 'qr_codes',
   paranoid: false,
-  indexes: [
-    { fields: ['vehicle_id'], unique: true },
-  ],
 });
 
 module.exports = QRCode;

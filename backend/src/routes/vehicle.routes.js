@@ -23,18 +23,21 @@ const vehicleSchema = z.object({
   }),
 });
 
+const { scannerRateLimiter } = require('../middleware/rateLimiter');
+
 // Member vehicle endpoints
 router.post('/member/vehicles', authenticate, authorize('member'), validate(vehicleSchema), createVehicle);
 router.get('/member/vehicles', authenticate, authorize('member'), getMyVehicles);
-router.get('/member/vehicles/:id/qr', authenticate, authorize('member'), getVehicleQR);
+router.get('/member/vehicles/:id/qr', authenticate, authorize('member', 'society_admin', 'super_admin'), getVehicleQR);
 
 // Society Admin vehicle endpoints
 router.get('/society-admin/vehicles', authenticate, authorize('society_admin', 'super_admin'), getSocietyVehicles);
+router.get('/society-admin/vehicles/:id/qr', authenticate, authorize('society_admin', 'super_admin'), getVehicleQR);
 router.post('/society-admin/vehicles/:id/approve', authenticate, authorize('society_admin', 'super_admin'), approveVehicle);
 router.post('/society-admin/vehicles/:id/reject', authenticate, authorize('society_admin', 'super_admin'), rejectVehicle);
 router.post('/admin/vehicles/:id/qr/revoke', authenticate, authorize('society_admin', 'super_admin'), revokeQRCode);
 
 // Public Scanner / Security Guard verification endpoint
-router.get('/public/qr/verify/:token', verifyQRToken);
+router.get('/public/qr/verify/:token', scannerRateLimiter, verifyQRToken);
 
 module.exports = router;

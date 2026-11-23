@@ -10,7 +10,7 @@ const {
 } = require('../controllers/society.controller');
 const { authenticate } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/rbacMiddleware');
-const { publicRateLimiter } = require('../middleware/rateLimiter');
+const { publicRateLimiter, registrationRateLimiter, checkMaliciousIp } = require('../middleware/rateLimiter');
 const validate = require('../middleware/validate');
 const { z } = require('zod');
 
@@ -27,7 +27,7 @@ const applySocietySchema = z.object({
 });
 
 // Public endpoints
-router.post('/public/societies/apply', publicRateLimiter, validate(applySocietySchema), applySociety);
+router.post('/public/societies/apply', checkMaliciousIp, registrationRateLimiter, validate(applySocietySchema), applySociety);
 
 // Super Admin endpoints
 router.get('/admin/societies', authenticate, authorize('super_admin'), getSocieties);

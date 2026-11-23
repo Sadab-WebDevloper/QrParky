@@ -1,15 +1,16 @@
-const { sequelize, Order, Payment, Vehicle, QRCode } = require('../models');
-const { createRazorpayOrder, verifyWebhookSignature } = require('../utils/razorpay');
+const { sequelize, Order, Payment, Vehicle, QRCode, User, Society } = require('../models');
+const { createRazorpayOrder, verifyWebhookSignature, verifyPaymentSignature } = require('../utils/razorpay');
 const { encryptPayload } = require('../utils/cryptoUtils');
 const { generateQRDataUrl } = require('../utils/qrGenerator');
 const { logAudit } = require('../utils/auditLogger');
+const { sendPremiumPassNotificationToSuperAdmin } = require('../utils/emailService');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 
 const VEHICLE_PRICES_PAISE = {
-  '2wheeler': 29900,  // ₹299
+  '2wheeler': 49900,  // ₹499
   '4wheeler': 49900,  // ₹499
-  'other': 39900,     // ₹399
+  'other': 49900,     // ₹499
 };
 
 /**
@@ -118,28 +119,39 @@ const handlePaymentWebhook = async (req, res, next) => {
   try {
     const rawBody = req.rawBody || JSON.stringify(req.body);
     const signature = req.headers['x-razorpay-signature'] || req.body.razorpay_signature;
-
-    // Verify webhook signature (CRITICAL SECURITY)
-    const isValid = verifyWebhookSignature(rawBody, signature);
-    if (!isValid) {
-      await t.rollback();
-      logger.error('[SECURITY WARNING] Invalid Razorpay webhook signature detected!');
-      return res.status(400).json({ success: false, message: 'Invalid webhook signature.' });
-    }
-
     const payload = req.body;
     let razorpayOrderId, razorpayPaymentId, razorpaySignature;
 
-    if (payload.event === 'order.paid' || payload.event === 'payment.captured') {
+    if (payload.payload && (payload.payload.payment || payload.payload.order)) {
+      // 1. Server-to-server webhook event
+      const isValid = verifyWebhookSignature(rawBody, signature);
+      if (!isValid) {
+        await t.rollback();
+        logger.error('[SECURITY WARNING] Invalid Razorpay webhook signature detected!');
+        return res.status(400).json({ success: false, message: 'Invalid webhook signature.' });
+      }
+
       const entity = payload.payload.payment ? payload.payload.payment.entity : payload.payload.order.entity;
-      razorpayOrderId = entity.order_id;
+      razorpayOrderId = entity.order_id || entity.id;
       razorpayPaymentId = entity.id;
       razorpaySignature = signature;
     } else if (payload.razorpay_order_id && payload.razorpay_payment_id) {
-      // Direct mock/checkout handler trigger format
+      // 2. Client checkout popup callback verification
       razorpayOrderId = payload.razorpay_order_id;
       razorpayPaymentId = payload.razorpay_payment_id;
-      razorpaySignature = payload.razorpay_signature || 'mock_valid_signature';
+      razorpaySignature = payload.razorpay_signature || signature;
+
+      const isValid = verifyPaymentSignature({
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature,
+      });
+
+      if (!isValid) {
+        await t.rollback();
+        logger.error('[SECURITY WARNING] Invalid Razorpay client payment signature detected!');
+        return res.status(400).json({ success: false, message: 'Invalid payment signature.' });
+      }
     } else {
       await t.rollback();
       return res.json({ success: true, message: 'Unhandled webhook event type.' });
@@ -227,6 +239,31 @@ const handlePaymentWebhook = async (req, res, next) => {
 
     await t.commit();
     logger.info(`[PAYMENT SUCCESS] Order #${order.id} verified & activated ${vehicleIds.length} vehicles.`);
+
+    // Asynchronously notify Super Admin about paid premium passes
+    (async () => {
+      try {
+        const member = await User.findByPk(order.memberId);
+        const society = member?.societyId ? await Society.findByPk(member.societyId) : null;
+        for (const vId of vehicleIds) {
+          const veh = await Vehicle.findByPk(vId);
+          if (veh) {
+            sendPremiumPassNotificationToSuperAdmin({
+              societyName: society?.name || 'Housing Society',
+              memberName: member?.name || 'Member',
+              memberEmail: member?.email || 'N/A',
+              memberPhone: member?.phone || 'N/A',
+              vehicleNumber: veh.vehicleNumber,
+              vehicleType: veh.vehicleType,
+              fee: '₹499 (PAID & ACTIVE)',
+              status: 'Payment Captured - QR Generated (Ready for Holographic Sticker Dispatch)',
+            }).catch(() => {});
+          }
+        }
+      } catch (err) {
+        logger.error(`Failed to notify super admin of paid order: ${err.message}`);
+      }
+    })();
 
     res.json({ success: true, message: 'Payment verified and vehicles activated successfully.' });
   } catch (error) {

@@ -13,7 +13,8 @@ import {
   Clock, 
   Shield, 
   FileCheck, 
-  ChevronRight 
+  ChevronRight,
+  Camera 
 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -61,6 +62,15 @@ export default function LandingPage() {
                   className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-white dark:bg-[#141416] hover:bg-zinc-100 dark:hover:bg-[#1e1e22] text-zinc-900 dark:text-white font-bold text-base border border-zinc-200 dark:border-zinc-800 hover:border-amber-400 dark:hover:border-amber-500/50 shadow-sm transition flex items-center justify-center gap-2"
                 >
                   Member & Admin Login
+                </Link>
+
+                <Link
+                  to="/scan"
+                  className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold text-base border border-amber-400/40 dark:border-amber-500/30 transition flex items-center justify-center gap-2"
+                  title="Open Gate Scanner"
+                >
+                  <Camera className="w-5 h-5 text-amber-500" />
+                  Gate Scanner
                 </Link>
               </div>
 

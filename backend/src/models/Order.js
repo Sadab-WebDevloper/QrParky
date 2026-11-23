@@ -16,11 +16,11 @@ const Order = sequelize.define('Order', {
     },
   },
   vehicleIds: {
-    type: DataTypes.JSON, // Array of vehicle IDs e.g. [1, 2]
+    type: DataTypes.JSON,
     allowNull: false,
   },
   amount: {
-    type: DataTypes.INTEGER, // in paise
+    type: DataTypes.INTEGER,
     allowNull: false,
   },
   razorpayOrderId: {
@@ -41,11 +41,6 @@ const Order = sequelize.define('Order', {
 }, {
   tableName: 'orders',
   paranoid: false,
-  indexes: [
-    { fields: ['member_id'] },
-    { fields: ['razorpay_order_id'], unique: true },
-    { fields: ['idempotency_key'], unique: true },
-  ],
 });
 
 module.exports = Order;

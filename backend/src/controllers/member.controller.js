@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { Society, User } = require('../models');
+const { Society, User, Vehicle } = require('../models');
 const { logAudit } = require('../utils/auditLogger');
 const { ROLES } = require('../config/constants');
 
@@ -88,10 +88,13 @@ const registerMember = async (req, res, next) => {
  */
 const getSocietyMembers = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 50 } = req.query;
     const societyId = req.user.societyId;
 
-    const where = { societyId };
+    const where = { 
+      societyId,
+      role: ROLES.MEMBER, // Exclude Society Admin from the members table
+    };
     if (status) where.status = status;
 
     const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
@@ -101,6 +104,14 @@ const getSocietyMembers = async (req, res, next) => {
       offset,
       order: [['createdAt', 'DESC']],
       attributes: { exclude: ['passwordHash', 'refreshTokenHash'] },
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicles',
+          attributes: ['id', 'vehicleNumber', 'vehicleType', 'status', 'passType'],
+          required: false,
+        },
+      ],
     });
 
     res.json({

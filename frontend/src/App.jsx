@@ -8,6 +8,8 @@ import Footer from './components/Footer';
 
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import ScannerPage from './pages/ScannerPage';
 import SocietyApplyPage from './pages/SocietyApplyPage';
 import MemberRegisterPage from './pages/MemberRegisterPage';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
@@ -36,6 +38,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+          <Route path="/scan" element={<ScannerPage />} />
           <Route path="/apply-society" element={<SocietyApplyPage />} />
           <Route path="/register/:token" element={<MemberRegisterPage />} />
 

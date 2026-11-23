@@ -16,11 +16,11 @@ const AuditLog = sequelize.define('AuditLog', {
     allowNull: true,
   },
   action: {
-    type: DataTypes.STRING, // e.g. vehicle_approved, society_rejected, qr_revoked
+    type: DataTypes.STRING,
     allowNull: false,
   },
   targetType: {
-    type: DataTypes.STRING, // vehicle, society, user, order, qr_code
+    type: DataTypes.STRING,
     allowNull: false,
   },
   targetId: {
@@ -28,7 +28,7 @@ const AuditLog = sequelize.define('AuditLog', {
     allowNull: true,
   },
   metadata: {
-    type: DataTypes.JSON, // before/after snapshot or context
+    type: DataTypes.JSON,
     allowNull: true,
   },
 }, {
@@ -36,11 +36,6 @@ const AuditLog = sequelize.define('AuditLog', {
   timestamps: true,
   updatedAt: false,
   paranoid: false,
-  indexes: [
-    { fields: ['created_at'] },
-    { fields: ['target_type'] },
-    { fields: ['actor_id'] },
-  ],
 });
 
 module.exports = AuditLog;

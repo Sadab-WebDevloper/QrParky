@@ -36,10 +36,6 @@ const Payment = sequelize.define('Payment', {
 }, {
   tableName: 'payments',
   paranoid: false,
-  indexes: [
-    { fields: ['razorpay_payment_id'], unique: true },
-    { fields: ['order_id'] },
-  ],
 });
 
 module.exports = Payment;

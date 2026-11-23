@@ -157,9 +157,9 @@ const approveSociety = async (req, res, next) => {
       status: 'approved',
     }, { transaction: t });
 
-    // Generate unique invite token (30 days validity)
+    // Generate unique permanent invite token (does NOT expire automatically, only rotates when admin clicks refresh)
     const inviteLinkToken = generateRandomToken(24);
-    const inviteLinkExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const inviteLinkExpiry = null;
 
     await society.update({
       status: 'approved',
@@ -267,7 +267,7 @@ const getOrRotateInviteLink = async (req, res, next) => {
 
     if (rotate === 'true' || !society.inviteLinkToken) {
       const inviteLinkToken = generateRandomToken(24);
-      const inviteLinkExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const inviteLinkExpiry = null; // Permanent link until admin rotates again
 
       await society.update({ inviteLinkToken, inviteLinkExpiry });
 
