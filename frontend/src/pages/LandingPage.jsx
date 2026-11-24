@@ -202,9 +202,9 @@ export default function LandingPage() {
                         <div className="text-xs font-extrabold text-zinc-900 dark:text-white truncate">
                           A-402 • Sadab Mamu
                         </div>
-                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+                        {/* <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
                           Resident Flat Owner
-                        </div>
+                        </div> */}
                       </div>
 
                       <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1">

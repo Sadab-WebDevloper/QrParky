@@ -190,11 +190,67 @@ const getAllUsers = async (req, res, next) => {
   }
 };
 
+/**
+ * Super Admin: Get Support & Help Messages submitted by users
+ */
+const getSupportFeedback = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10, search } = req.query;
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * limitNum;
+
+    const { count, rows } = await AuditLog.findAndCountAll({
+      where: { targetType: 'feedback' },
+      limit: limitNum,
+      offset,
+      order: [['createdAt', 'DESC']],
+    });
+
+    let items = rows.map((r) => {
+      const meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {});
+      return {
+        id: r.id,
+        name: meta.name || 'Anonymous',
+        emailOrPhone: meta.emailOrPhone || 'N/A',
+        category: meta.category || 'general',
+        message: meta.message || '',
+        createdAt: r.createdAt,
+      };
+    });
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      items = items.filter(
+        (it) =>
+          it.name.toLowerCase().includes(q) ||
+          it.emailOrPhone.toLowerCase().includes(q) ||
+          it.category.toLowerCase().includes(q) ||
+          it.message.toLowerCase().includes(q)
+      );
+    }
+
+    res.json({
+      success: true,
+      data: items,
+      meta: {
+        total: count,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum) || 1,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSuperAdminStats,
   getAuditLogs,
   getAllUsers,
   getSocietyAdminStats,
   getSocietyAuditLogs,
+  getSupportFeedback,
 };
 

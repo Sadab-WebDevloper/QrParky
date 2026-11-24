@@ -316,7 +316,7 @@ const submitFeedback = async (req, res, next) => {
       actorRole: 'public_visitor',
       action: 'feedback_submitted',
       targetType: 'feedback',
-      metadata: { name, emailOrPhone, category },
+      metadata: { name, emailOrPhone, category, message },
     });
 
     // Send SMTP notification asynchronously

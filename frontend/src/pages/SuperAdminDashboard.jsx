@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -16,11 +16,11 @@ import {
   Mail, 
   Phone, 
   AlertTriangle,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Filter,
-  Check
+  Check,
+  MessageSquare
 } from 'lucide-react';
 import { ROLE_LABELS } from '../constants/roles';
 
@@ -28,11 +28,12 @@ export default function SuperAdminDashboard() {
   const toast = useToast();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('applications'); // 'applications', 'societies', 'users'
+  const [tab, setTab] = useState('applications'); // 'applications', 'societies', 'users', 'support'
 
   // Data states
   const [societies, setSocieties] = useState([]);
   const [users, setUsers] = useState([]);
+  const [supportMessages, setSupportMessages] = useState([]);
 
   // Server-side Pagination states per tab
   const [page, setPage] = useState(1);
@@ -41,14 +42,7 @@ export default function SuperAdminDashboard() {
 
   // Dropdown Filter States
   const [societyStatusFilter, setSocietyStatusFilter] = useState('all'); // 'all', 'approved', 'pending', 'rejected'
-  const [userRoleFilter, setUserRoleFilter] = useState('all'); // 'all', '2' (Society Admin), '3' (Resident Member)
-
-  // Custom Dropdown Open States
-  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
-
-  const statusDropdownRef = useRef(null);
-  const roleDropdownRef = useRef(null);
+  const [userRoleFilter, setUserRoleFilter] = useState('all'); // 'all', '1' (Super Admin), '2' (Society Admin), '3' (Resident Member)
 
   // Modal: Show Generated Credentials after Society Approval
   const [selectedCreds, setSelectedCreds] = useState(null);
@@ -61,20 +55,6 @@ export default function SuperAdminDashboard() {
     reason: '',
     submitting: false
   });
-
-  // Close dropdowns on click outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
-        setStatusDropdownOpen(false);
-      }
-      if (roleDropdownRef.current && !roleDropdownRef.current.contains(event.target)) {
-        setRoleDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Fetch Stats once on load or manual refresh
   const fetchStats = async () => {
@@ -116,6 +96,16 @@ export default function SuperAdminDashboard() {
         const res = await API.get(`/admin/users?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}${roleParam}`);
         if (res.data?.success) {
           setUsers(res.data.data || []);
+          if (res.data.meta) {
+            setPagination(res.data.meta);
+          } else {
+            setPagination({ total: res.data.data?.length || 0, page: 1, limit: 10, totalPages: 1 });
+          }
+        }
+      } else if (tab === 'support') {
+        const res = await API.get(`/admin/support-feedback?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
+        if (res.data?.success) {
+          setSupportMessages(res.data.data || []);
           if (res.data.meta) {
             setPagination(res.data.meta);
           } else {
@@ -349,10 +339,22 @@ export default function SuperAdminDashboard() {
           <Users className="w-3.5 h-3.5" />
           <span>All System Users ({stats?.users?.total || 0})</span>
         </button>
+
+        <button
+          onClick={() => handleTabChange('support')}
+          className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-1.5 cursor-pointer ${
+            tab === 'support'
+              ? 'bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 shadow-md shadow-amber-500/20'
+              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white bg-zinc-100 dark:bg-[#141416]'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>Support Inquiries</span>
+        </button>
       </div>
 
-      {/* Search Bar & Custom Dropdown Filter (High z-index so dropdown floats over table) */}
-      <div className="glass-card p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5 relative z-30">
+      {/* Search Bar & Clean Dropdown Filter (Native Select - eliminates clipping and z-index issues) */}
+      <div className="glass-card p-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -360,6 +362,7 @@ export default function SuperAdminDashboard() {
             placeholder={
               tab === 'applications' ? 'Search application by society name, address, submitter...' :
               tab === 'societies' ? 'Search society name, city, admin contact...' :
+              tab === 'support' ? 'Search support messages by sender, contact, category...' :
               'Search user name, email, phone, society...'
             }
             value={searchQuery}
@@ -368,144 +371,43 @@ export default function SuperAdminDashboard() {
           />
         </div>
 
-        {/* CUSTOM DROPDOWN: Societies Tab Filter */}
+        {/* CLEAN DROPDOWN: Societies Tab Filter */}
         {tab === 'societies' && (
-          <div className="relative z-40" ref={statusDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:border-amber-400 dark:hover:border-amber-500/50 transition cursor-pointer shadow-sm w-full sm:w-auto justify-between"
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Status:</span>
+            <select
+              value={societyStatusFilter}
+              onChange={(e) => {
+                setSocietyStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-amber-500 cursor-pointer shadow-sm capitalize"
             >
-              <div className="flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="text-zinc-400">Status:</span>
-                <span className="font-bold text-amber-600 dark:text-amber-400 capitalize">
-                  {societyStatusFilter === 'all' ? 'All Societies' : societyStatusFilter}
-                </span>
-              </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {statusDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-48 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700 shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-                <button
-                  type="button"
-                  onClick={() => { setSocietyStatusFilter('all'); setPage(1); setStatusDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    societyStatusFilter === 'all'
-                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>All Societies</span>
-                  {societyStatusFilter === 'all' && <Check className="w-3.5 h-3.5 text-amber-500" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setSocietyStatusFilter('approved'); setPage(1); setStatusDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    societyStatusFilter === 'approved'
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>Approved</span>
-                  {societyStatusFilter === 'approved' && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setSocietyStatusFilter('pending'); setPage(1); setStatusDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    societyStatusFilter === 'pending'
-                      ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>Pending</span>
-                  {societyStatusFilter === 'pending' && <Check className="w-3.5 h-3.5 text-yellow-500" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setSocietyStatusFilter('rejected'); setPage(1); setStatusDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    societyStatusFilter === 'rejected'
-                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>Rejected</span>
-                  {societyStatusFilter === 'rejected' && <Check className="w-3.5 h-3.5 text-rose-500" />}
-                </button>
-              </div>
-            )}
+              <option value="all">All Societies</option>
+              <option value="approved">Approved</option>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
+            </select>
           </div>
         )}
 
-        {/* CUSTOM DROPDOWN: Users Tab Role Filter */}
+        {/* CLEAN DROPDOWN: Users Tab Role Filter */}
         {tab === 'users' && (
-          <div className="relative z-40" ref={roleDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:border-amber-400 dark:hover:border-amber-500/50 transition cursor-pointer shadow-sm w-full sm:w-auto justify-between"
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Role:</span>
+            <select
+              value={userRoleFilter}
+              onChange={(e) => {
+                setUserRoleFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-amber-500 cursor-pointer shadow-sm"
             >
-              <div className="flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="text-zinc-400">Role:</span>
-                <span className="font-bold text-amber-600 dark:text-amber-400">
-                  {userRoleFilter === 'all' ? 'All Roles' :
-                   userRoleFilter === '2' ? 'Society Admin' :
-                   'Resident Member'}
-                </span>
-              </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${roleDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {roleDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-52 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700 shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-                <button
-                  type="button"
-                  onClick={() => { setUserRoleFilter('all'); setPage(1); setRoleDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    userRoleFilter === 'all'
-                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>All Roles</span>
-                  {userRoleFilter === 'all' && <Check className="w-3.5 h-3.5 text-amber-500" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setUserRoleFilter('2'); setPage(1); setRoleDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    userRoleFilter === '2'
-                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>Society Admin</span>
-                  {userRoleFilter === '2' && <Check className="w-3.5 h-3.5 text-amber-500" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setUserRoleFilter('3'); setPage(1); setRoleDropdownOpen(false); }}
-                  className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                    userRoleFilter === '3'
-                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold'
-                      : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>Resident Member</span>
-                  {userRoleFilter === '3' && <Check className="w-3.5 h-3.5 text-amber-500" />}
-                </button>
-              </div>
-            )}
+              <option value="all">All Roles</option>
+              <option value="1">Super Admin</option>
+              <option value="2">Society Admin</option>
+              <option value="3">Resident Member</option>
+            </select>
           </div>
         )}
       </div>
@@ -698,6 +600,78 @@ export default function SuperAdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right text-xs text-zinc-500">
                         {new Date(u.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Server-Side Pagination Bar */}
+          <PaginationBar
+            pagination={pagination}
+            onPageChange={(p) => setPage(p)}
+          />
+        </div>
+      )}
+
+      {/* Tab 4: Support & Help Inquiries */}
+      {tab === 'support' && (
+        <div className="glass-card rounded-2xl border border-zinc-200 dark:border-zinc-800/80 overflow-hidden bg-white/90 dark:bg-[#121214] relative z-10">
+          {loading ? (
+            <div className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-amber-500" />
+              Loading support messages...
+            </div>
+          ) : supportMessages.length === 0 ? (
+            <div className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+              No support inquiries or feedback received yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-zinc-700 dark:text-zinc-300">
+                <thead className="bg-zinc-100 dark:bg-[#18181b] text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase border-b border-zinc-200 dark:border-zinc-800">
+                  <tr>
+                    <th className="px-6 py-4">Sender</th>
+                    <th className="px-6 py-4">Contact</th>
+                    <th className="px-6 py-4">Category</th>
+                    <th className="px-6 py-4">Message</th>
+                    <th className="px-6 py-4 text-right">Received</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
+                  {supportMessages.map((msg) => (
+                    <tr key={msg.id} className="hover:bg-zinc-50 dark:hover:bg-[#18181b]/50 transition">
+                      <td className="px-6 py-4 font-bold text-zinc-900 dark:text-white text-xs">
+                        {msg.name}
+                      </td>
+                      <td className="px-6 py-4 text-xs">
+                        <div className="font-semibold text-zinc-800 dark:text-zinc-200">{msg.emailOrPhone}</div>
+                        {msg.emailOrPhone?.includes('@') && (
+                          <a
+                            href={`mailto:${msg.emailOrPhone}?subject=Re:%20QR%20Parky%20Support%20Inquiry`}
+                            className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 mt-0.5"
+                          >
+                            <Mail className="w-3 h-3" /> Reply via Email
+                          </a>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          msg.category === 'issue' || msg.category === 'bug' ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800' :
+                          msg.category === 'feature' ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 border border-purple-300 dark:border-purple-800' :
+                          msg.category === 'suggestion' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800' :
+                          'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
+                        }`}>
+                          {msg.category || 'General'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-zinc-700 dark:text-zinc-300 max-w-md whitespace-pre-wrap leading-relaxed">
+                        {msg.message || <span className="text-zinc-400 italic">No message body provided</span>}
+                      </td>
+                      <td className="px-6 py-4 text-right text-xs text-zinc-500 whitespace-nowrap">
+                        {new Date(msg.createdAt).toLocaleDateString()} {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </td>
                     </tr>
                   ))}
