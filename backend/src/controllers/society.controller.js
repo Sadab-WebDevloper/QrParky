@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const { Op } = require('sequelize');
 const { sequelize, Society, User } = require('../models');
 const { generateRandomToken } = require('../utils/cryptoUtils');
 const { logAudit } = require('../utils/auditLogger');
@@ -7,6 +8,7 @@ const {
   sendSocietyApplicationReceivedEmail,
   sendSocietyApprovedEmail,
   sendSocietyRejectedEmail,
+  sendFeedbackNotificationEmail,
 } = require('../utils/emailService');
 
 /**
@@ -66,14 +68,23 @@ const applySociety = async (req, res, next) => {
  */
 const getSocieties = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, search } = req.query;
     const where = {};
-    if (status) where.status = status;
+    if (status && status !== 'all') where.status = status;
 
-    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    if (search) {
+      where[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { address: { [Op.like]: `%${search}%` } },
+      ];
+    }
+
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * limitNum;
     const { count, rows } = await Society.findAndCountAll({
       where,
-      limit: parseInt(limit, 10),
+      limit: limitNum,
       offset,
       order: [['createdAt', 'DESC']],
       include: [
@@ -87,9 +98,9 @@ const getSocieties = async (req, res, next) => {
       data: rows,
       meta: {
         total: count,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        totalPages: Math.ceil(count / limit),
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum),
       },
     });
   } catch (error) {
@@ -294,6 +305,37 @@ const getOrRotateInviteLink = async (req, res, next) => {
   }
 };
 
+/**
+ * Public: Submit User Feedback / Help Request (Triggers SMTP Notification)
+ */
+const submitFeedback = async (req, res, next) => {
+  try {
+    const { name, emailOrPhone, category, message } = req.body;
+
+    await logAudit({
+      actorRole: 'public_visitor',
+      action: 'feedback_submitted',
+      targetType: 'feedback',
+      metadata: { name, emailOrPhone, category },
+    });
+
+    // Send SMTP notification asynchronously
+    sendFeedbackNotificationEmail({ name, emailOrPhone, category, message })
+      .catch((err) => {
+        // Log but don't fail the request if mail server is temporarily unreachable
+        const logger = require('../utils/logger');
+        logger.error(`[SMTP ERROR] Failed to send feedback notification: ${err.message}`);
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Feedback received successfully. Our team has been notified via email.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   applySociety,
   getSocieties,
@@ -301,4 +343,5 @@ module.exports = {
   approveSociety,
   rejectSociety,
   getOrRotateInviteLink,
+  submitFeedback,
 };

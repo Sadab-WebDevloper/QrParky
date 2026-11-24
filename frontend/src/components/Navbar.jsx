@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
 import Modal from './Modal';
-import { QrCode, ShieldCheck, LogOut, User, Building2, Car, ChevronDown, LayoutDashboard, AlertCircle, Sun, Moon, Camera } from 'lucide-react';
+import { QrCode, ShieldCheck, LogOut, User, Building2, Car, ChevronDown, LayoutDashboard, AlertCircle, Sun, Moon, Camera, LifeBuoy } from 'lucide-react';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
 
 export default function Navbar() {
@@ -53,43 +53,45 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           
           {/* Brand Logo */}
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-105 transition duration-200">
-              <QrCode className="w-5 h-5 text-zinc-950 font-black" />
+          <Link to="/" className="flex items-center gap-2 group shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-105 transition duration-200 shrink-0">
+              <QrCode className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-950 font-black" />
             </div>
             <div>
-              <span className="text-xl font-extrabold bg-gradient-to-r from-amber-500 via-yellow-600 to-amber-700 dark:from-amber-200 dark:via-yellow-300 dark:to-amber-500 bg-clip-text text-transparent tracking-tight">
+              <span className="text-lg sm:text-xl font-extrabold bg-gradient-to-r from-amber-500 via-yellow-600 to-amber-700 dark:from-amber-200 dark:via-yellow-300 dark:to-amber-500 bg-clip-text text-transparent tracking-tight">
                 QrParky
               </span>
             </div>
           </Link>
 
           {/* Dynamic Navigation & Profile */}
-          <nav className="flex items-center gap-3">
+          <nav className="flex items-center gap-2 sm:gap-3">
             
             {/* Theme Toggle Button */}
             <button
               type="button"
               onClick={toggleTheme}
-              className="p-2 rounded-xl text-zinc-600 dark:text-zinc-400 hover:text-amber-500 dark:hover:text-amber-400 bg-zinc-100 dark:bg-zinc-900 hover:bg-amber-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-amber-300 dark:hover:border-amber-500/40 transition shadow-sm cursor-pointer"
+              className="p-2 rounded-xl text-zinc-600 dark:text-zinc-400 hover:text-amber-500 dark:hover:text-amber-400 bg-zinc-100 dark:bg-zinc-900 hover:bg-amber-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-amber-300 dark:hover:border-amber-500/40 transition shadow-sm cursor-pointer shrink-0"
               aria-label="Toggle light and dark mode"
               title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
               {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-zinc-700" />}
             </button>
 
-            {/* Gate Scanner Button */}
-            <Link
-              to="/scan"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-400/30 dark:border-amber-500/30 transition shadow-sm"
-              title="Open Security Gate Scanner"
-            >
-              <Camera className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Gate Scanner</span>
-            </Link>
+            {/* Gate Scanner Button (Only shown for Public / Guard at gate and Society Admin; hidden for Resident Members & Super Admin) */}
+            {(!user || user.role === ROLES.SOCIETY_ADMIN) && (
+              <Link
+                to="/scan"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-400/30 dark:border-amber-500/30 transition shadow-sm whitespace-nowrap shrink-0"
+                title="Open Security Gate Scanner"
+              >
+                <Camera className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span className="hidden sm:inline">Gate Scanner</span>
+              </Link>
+            )}
 
             {user ? (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 
 
                 {/* Profile Avatar & Dropdown */}
@@ -138,6 +140,19 @@ export default function Navbar() {
                         View Dashboard
                       </Link>
 
+                      {/* Help & Support Trigger */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDropdownOpen(false);
+                          window.dispatchEvent(new CustomEvent('open-help-modal'));
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition text-left cursor-pointer"
+                      >
+                        <LifeBuoy className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                        Help & Feedback
+                      </button>
+
                       {/* Sign Out Trigger */}
                       <button
                         type="button"
@@ -152,17 +167,17 @@ export default function Navbar() {
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <Link
                   to="/apply-society"
-                  className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-amber-600 dark:hover:text-amber-300 px-3 py-2 rounded-xl transition"
+                  className="hidden sm:inline-flex text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-amber-600 dark:hover:text-amber-300 px-3 py-2 rounded-xl transition whitespace-nowrap"
                 >
                   Apply Society
                 </Link>
 
                 <Link
                   to="/login"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 hover:opacity-95 shadow-md shadow-amber-500/20 transition"
+                  className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 hover:opacity-95 shadow-md shadow-amber-500/20 transition whitespace-nowrap shrink-0"
                 >
                   Login
                 </Link>
@@ -184,9 +199,9 @@ export default function Navbar() {
           </div>
           <div>
             <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1">Are you sure you want to sign out?</h3>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {/* <p className="text-xs text-zinc-500 dark:text-zinc-400">
               You will need to enter your credentials again to access your dashboard.
-            </p>
+            </p> */}
           </div>
 
           <div className="grid grid-cols-2 gap-3 pt-3">

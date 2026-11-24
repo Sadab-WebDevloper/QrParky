@@ -62,7 +62,7 @@ export default function SocietyApplyPage() {
             Your application for <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formData.name}</span> has been received.
           </p>
           <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 max-w-sm mx-auto mb-6">
-            Upon Super Admin approval, temporary administrator credentials will be sent to <span className="text-zinc-900 dark:text-white font-semibold">{formData.adminEmail}</span>.
+            Upon verification, your society portal login credentials will be sent to <span className="text-zinc-900 dark:text-white font-semibold">{formData.adminEmail}</span>.
           </div>
           <Link
             to="/login"
@@ -78,59 +78,68 @@ export default function SocietyApplyPage() {
             {/* Section 1: Society Info */}
             <div>
               <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5" /> Society Information
+                <Building2 className="w-3.5 h-3.5" /> Society Details
               </div>
               
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
                     Society Name
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g. Greenwood Palms Cooperative Housing Society"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-                  />
+                  <div className="relative">
+                    <Building2 className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      required
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Greenwood Palms CHS"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
                     Full Physical Address
                   </label>
-                  <textarea
-                    required
-                    rows={2}
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Street, Landmark, City, Pincode"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-                  />
+                  <div className="relative">
+                    <MapPin className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-3 pointer-events-none" />
+                    <textarea
+                      required
+                      rows={2}
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      placeholder="Street, Landmark, City & Pincode"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition resize-none"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Section 2: Primary Admin Info */}
+            {/* Section 2: Society Admin / Secretary Contact */}
             <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800/80">
               <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5" /> Primary Administrator Contact
+                <User className="w-3.5 h-3.5" /> Society Admin / Secretary Details
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Administrator Full Name
+                    Full Name <span className="text-[11px] font-normal text-zinc-500 dark:text-zinc-400">(Secretary / Committee Admin)</span>
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.adminName}
-                    onChange={(e) => setFormData({ ...formData, adminName: e.target.value })}
-                    placeholder="Rajesh Sharma"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-                  />
+                  <div className="relative">
+                    <User className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      required
+                      value={formData.adminName}
+                      onChange={(e) => setFormData({ ...formData, adminName: e.target.value })}
+                      placeholder="e.g. Rajesh Sharma"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -138,28 +147,34 @@ export default function SocietyApplyPage() {
                     <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
                       Email Address
                     </label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.adminEmail}
-                      onChange={(e) => setFormData({ ...formData, adminEmail: e.target.value })}
-                      placeholder="admin@society.com"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-                    />
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="email"
+                        required
+                        value={formData.adminEmail}
+                        onChange={(e) => setFormData({ ...formData, adminEmail: e.target.value })}
+                        placeholder="admin@society.com"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                      />
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                      Phone Number
+                      Mobile / WhatsApp
                     </label>
-                    <input
-                      type="tel"
-                      required
-                      value={formData.adminPhone}
-                      onChange={(e) => setFormData({ ...formData, adminPhone: e.target.value })}
-                      placeholder="9820012345"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
-                    />
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="tel"
+                        required
+                        value={formData.adminPhone}
+                        onChange={(e) => setFormData({ ...formData, adminPhone: e.target.value })}
+                        placeholder="98200 12345"
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

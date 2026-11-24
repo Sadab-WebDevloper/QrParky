@@ -7,6 +7,7 @@ const {
   approveSociety,
   rejectSociety,
   getOrRotateInviteLink,
+  submitFeedback,
 } = require('../controllers/society.controller');
 const { authenticate } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/rbacMiddleware');
@@ -26,8 +27,18 @@ const applySocietySchema = z.object({
   }),
 });
 
+const feedbackSchema = z.object({
+  body: z.object({
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    emailOrPhone: z.string().min(3, 'Email or Phone is required'),
+    category: z.string().optional().default('improvement'),
+    message: z.string().min(5, 'Message must be at least 5 characters'),
+  }),
+});
+
 // Public endpoints
 router.post('/public/societies/apply', checkMaliciousIp, registrationRateLimiter, validate(applySocietySchema), applySociety);
+router.post('/public/feedback', checkMaliciousIp, publicRateLimiter, validate(feedbackSchema), submitFeedback);
 
 // Super Admin endpoints
 router.get('/admin/societies', authenticate, authorize('super_admin'), getSocieties);

@@ -381,10 +381,77 @@ const sendPasswordResetEmail = async ({ userEmail, userName, resetToken }) => {
   return sendMail({ to: userEmail, subject, text, html });
 };
 
+/**
+ * 6. Feedback & Support Notification Email (Sent to Admin / Helpdesk)
+ */
+const sendFeedbackNotificationEmail = async ({ name, emailOrPhone, category, message }) => {
+  const adminEmail = config.email.user || 'sadabmamu5@gmail.com';
+  const categoryLabels = {
+    improvement: '💡 Improvement Suggestion',
+    feature: '✨ New Feature Request',
+    issue: '⚠️ Issue / Bug Report',
+  };
+  const categoryText = categoryLabels[category] || category || 'User Feedback';
+  const subject = `[QrParky Helpdesk] ${categoryText} from ${name}`;
+  const text = `Hello Team,\n\nYou have received a new user feedback submission on QrParky.\n\nFrom: ${name} (${emailOrPhone})\nCategory: ${categoryText}\nMessage:\n${message}\n\nTime: ${new Date().toLocaleString()}\n\nQrParky System Notification`;
+
+  const content = `
+    <div style="background-color: #fffdf5; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px;">
+      <div style="font-size: 16px; font-weight: 800; color: #92400e; margin-bottom: 4px;">
+        ${categoryText}
+      </div>
+      <div style="font-size: 13px; color: #78350f;">
+        A user has submitted feedback or requested assistance via the QrParky Help Hub.
+      </div>
+    </div>
+
+    <div class="info-card">
+      <div style="font-size: 11px; font-weight: 700; color: #78716c; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+        Sender Information
+      </div>
+      <table class="info-table">
+        <tr>
+          <td class="info-label">Name:</td>
+          <td class="info-value">${name}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Contact (Email/Phone):</td>
+          <td class="info-value">${emailOrPhone}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Category:</td>
+          <td class="info-value">${categoryText}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Submitted At:</td>
+          <td class="info-value">${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #faf8f2; border: 1px solid #ede3cf; border-radius: 12px; padding: 18px 20px; margin-bottom: 20px;">
+      <div style="font-size: 12px; font-weight: 800; color: #1c1917; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+        Message / Suggestion:
+      </div>
+      <p style="font-size: 13px; color: #44403c; line-height: 1.6; margin: 0; white-space: pre-wrap;">
+        ${message}
+      </p>
+    </div>
+  `;
+
+  const html = renderEmailLayout({
+    title: subject,
+    content,
+  });
+
+  return sendMail({ to: adminEmail, subject, text, html });
+};
+
 module.exports = {
   sendSocietyApplicationReceivedEmail,
   sendSocietyApprovedEmail,
   sendSocietyRejectedEmail,
   sendPremiumPassNotificationToSuperAdmin,
   sendPasswordResetEmail,
+  sendFeedbackNotificationEmail,
 };

@@ -133,11 +133,53 @@ const getSocietyAuditLogs = async (req, res, next) => {
 };
 
 /**
- * Super Admin: Get All Users across the entire system
+ * Super Admin: Get All Users across the entire system with server-side pagination & filtering
  */
 const getAllUsers = async (req, res, next) => {
   try {
+    const { page, limit, role, search } = req.query;
+    const where = {};
+
+    if (role && role !== 'all') {
+      where.role = parseInt(role, 10);
+    }
+
+    if (search) {
+      where[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } },
+        { phone: { [Op.like]: `%${search}%` } },
+      ];
+    }
+
+    if (page || limit) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const offset = (pageNum - 1) * limitNum;
+
+      const { count, rows } = await User.findAndCountAll({
+        where,
+        attributes: ['id', 'name', 'email', 'phone', 'role', 'status', 'societyId', 'createdAt'],
+        include: [{ model: Society, as: 'society', attributes: ['id', 'name'] }],
+        limit: limitNum,
+        offset,
+        order: [['createdAt', 'DESC']],
+      });
+
+      return res.json({
+        success: true,
+        data: rows,
+        meta: {
+          total: count,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(count / limitNum),
+        },
+      });
+    }
+
     const users = await User.findAll({
+      where,
       attributes: ['id', 'name', 'email', 'phone', 'role', 'status', 'societyId', 'createdAt'],
       include: [{ model: Society, as: 'society', attributes: ['id', 'name'] }],
       order: [['createdAt', 'DESC']],
