@@ -21,7 +21,12 @@ app.use(helmet({
 
 // CORS Configuration
 app.use(cors({
-  origin: config.corsOrigin || '*',
+  origin: (origin, callback) => {
+    if (!origin || origin.includes('localhost') || origin.endsWith('.vercel.app') || origin.includes('sadab.site') || config.corsOrigin === '*') {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true,
 }));
 

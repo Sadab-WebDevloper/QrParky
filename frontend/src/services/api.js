@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') + '/api/v1' : '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -34,7 +34,7 @@ API.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('qr_parky_refresh_token');
         if (refreshToken) {
-          const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
+          const res = await API.post('/auth/refresh', { refreshToken });
           if (res.data?.success) {
             const newToken = res.data.data.token;
             localStorage.setItem('qr_parky_token', newToken);
