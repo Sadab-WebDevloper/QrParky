@@ -12,21 +12,63 @@ export default function SocietyApplyPage() {
     adminEmail: '',
     adminPhone: '',
   });
+  const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const toast = useToast();
 
+  const validateForm = () => {
+    const newErrors = {};
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+    if (!formData.name.trim()) {
+      newErrors.name = 'Society name is required';
+    } else if (formData.name.trim().length < 3) {
+      newErrors.name = 'Society name must be at least 3 characters';
+    }
+
+    if (!formData.address.trim()) {
+      newErrors.address = 'Full physical address is required';
+    } else if (formData.address.trim().length < 5) {
+      newErrors.address = 'Full physical address must be at least 5 characters';
+    }
+
+    if (!formData.adminName.trim()) {
+      newErrors.adminName = 'Administrator name is required';
+    }
+
+    if (!formData.adminEmail.trim()) {
+      newErrors.adminEmail = 'Administrator email address is required';
+    } else if (!emailRegex.test(formData.adminEmail.trim())) {
+      newErrors.adminEmail = 'Please enter a valid email address (e.g. admin@society.com)';
+    }
+
+    if (!formData.adminPhone.trim()) {
+      newErrors.adminPhone = 'Mobile phone number is required';
+    } else if (!/^\d{10}$/.test(formData.adminPhone.trim())) {
+      newErrors.adminPhone = 'Mobile phone must be exactly 10 digits';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) {
+      toast.error('Please resolve form validation errors.');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
-        name: formData.name,
-        address: formData.address,
+        name: formData.name.trim(),
+        address: formData.address.trim(),
         submittedBy: {
-          name: formData.adminName,
-          email: formData.adminEmail,
-          phone: formData.adminPhone,
+          name: formData.adminName.trim(),
+          email: formData.adminEmail.trim(),
+          phone: formData.adminPhone.trim(),
         },
       };
 
@@ -36,7 +78,30 @@ export default function SocietyApplyPage() {
         toast.success('Society application submitted successfully!');
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to submit society application.');
+      const data = err.response?.data;
+      let errMsg = data?.message || 'Failed to submit society application.';
+
+      if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+        const firstErr = data.errors[0];
+        const detailMsg = firstErr.message || firstErr.msg;
+        if (detailMsg && (errMsg === 'Validation error' || !errMsg.includes(detailMsg))) {
+          errMsg = detailMsg;
+        }
+      }
+
+      toast.error(errMsg);
+
+      // Highlight the specific conflicting field
+      const lower = errMsg.toLowerCase();
+      if (lower.includes('society') || lower.includes('name')) {
+        setErrors((prev) => ({ ...prev, name: errMsg }));
+      } else if (lower.includes('email')) {
+        setErrors((prev) => ({ ...prev, adminEmail: errMsg }));
+      } else if (lower.includes('phone') || lower.includes('mobile')) {
+        setErrors((prev) => ({ ...prev, adminPhone: errMsg }));
+      } else if (lower.includes('address')) {
+        setErrors((prev) => ({ ...prev, address: errMsg }));
+      }
     } finally {
       setLoading(false);
     }
@@ -92,11 +157,21 @@ export default function SocietyApplyPage() {
                       type="text"
                       required
                       value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, name: e.target.value });
+                        if (errors.name) setErrors((prev) => ({ ...prev, name: null }));
+                      }}
                       placeholder="e.g. Greenwood Palms CHS"
-                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                      className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 transition ${
+                        errors.name
+                          ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500/20 focus:border-rose-500'
+                          : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/20 focus:border-amber-500'
+                      }`}
                     />
                   </div>
+                  {errors.name && (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-medium">{errors.name}</p>
+                  )}
                 </div>
 
                 <div>
@@ -109,11 +184,21 @@ export default function SocietyApplyPage() {
                       required
                       rows={2}
                       value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, address: e.target.value });
+                        if (errors.address) setErrors((prev) => ({ ...prev, address: null }));
+                      }}
                       placeholder="Street, Landmark, City & Pincode"
-                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition resize-none"
+                      className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 transition resize-none ${
+                        errors.address
+                          ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500/20 focus:border-rose-500'
+                          : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/20 focus:border-amber-500'
+                      }`}
                     />
                   </div>
+                  {errors.address && (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-medium">{errors.address}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -135,11 +220,21 @@ export default function SocietyApplyPage() {
                       type="text"
                       required
                       value={formData.adminName}
-                      onChange={(e) => setFormData({ ...formData, adminName: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, adminName: e.target.value });
+                        if (errors.adminName) setErrors((prev) => ({ ...prev, adminName: null }));
+                      }}
                       placeholder="e.g. Rajesh Sharma"
-                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                      className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 transition ${
+                        errors.adminName
+                          ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500/20 focus:border-rose-500'
+                          : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/20 focus:border-amber-500'
+                      }`}
                     />
                   </div>
+                  {errors.adminName && (
+                    <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-medium">{errors.adminName}</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -153,28 +248,50 @@ export default function SocietyApplyPage() {
                         type="email"
                         required
                         value={formData.adminEmail}
-                        onChange={(e) => setFormData({ ...formData, adminEmail: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, adminEmail: e.target.value });
+                          if (errors.adminEmail) setErrors((prev) => ({ ...prev, adminEmail: null }));
+                        }}
                         placeholder="admin@society.com"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                        className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 transition ${
+                          errors.adminEmail
+                            ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500/20 focus:border-rose-500'
+                            : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/20 focus:border-amber-500'
+                        }`}
                       />
                     </div>
+                    {errors.adminEmail && (
+                      <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-medium">{errors.adminEmail}</p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
-                      Mobile / WhatsApp
+                      Mobile Phone <span className="text-zinc-400 font-normal">(10 digits)</span>
                     </label>
                     <div className="relative">
                       <Phone className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         type="tel"
                         required
+                        maxLength={10}
                         value={formData.adminPhone}
-                        onChange={(e) => setFormData({ ...formData, adminPhone: e.target.value })}
-                        placeholder="98200 12345"
-                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setFormData({ ...formData, adminPhone: digits });
+                          if (errors.adminPhone) setErrors((prev) => ({ ...prev, adminPhone: null }));
+                        }}
+                        placeholder="9820012345"
+                        className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 font-mono transition ${
+                          errors.adminPhone
+                            ? 'border-rose-400 dark:border-rose-500 focus:ring-rose-500/20 focus:border-rose-500'
+                            : 'border-zinc-200 dark:border-zinc-800 focus:ring-amber-500/20 focus:border-amber-500'
+                        }`}
                       />
                     </div>
+                    {errors.adminPhone && (
+                      <p className="text-[11px] text-rose-500 dark:text-rose-400 mt-1 font-medium">{errors.adminPhone}</p>
+                    )}
                   </div>
                 </div>
               </div>

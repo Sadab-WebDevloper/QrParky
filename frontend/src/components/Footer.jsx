@@ -24,17 +24,18 @@ export default function Footer({ onOpenHelp }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-zinc-500 dark:text-zinc-400">
-          <button
+          {/* <button
             type="button"
             onClick={handleOpenHelp}
             className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-bold hover:underline cursor-pointer"
           >
             <LifeBuoy className="w-4 h-4" /> Help & Support
-          </button>
-          <span className="text-zinc-300 dark:text-zinc-600">|</span>
+          </button> */}
+          
           <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400 font-medium">
             <ShieldCheck className="w-4 h-4 text-emerald-500" /> Bank-Grade Security
           </span>
+          <span className="text-zinc-300 dark:text-zinc-600">|</span>
           <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400 font-medium">
             <Lock className="w-4 h-4 text-amber-500" /> Tamper-Proof QR
           </span>

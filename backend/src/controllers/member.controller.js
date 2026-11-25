@@ -34,7 +34,7 @@ const validateInviteToken = async (req, res, next) => {
 const registerMember = async (req, res, next) => {
   try {
     const { token } = req.params;
-    const { name, email, phone, password } = req.body;
+    const { name, email, phone, password, vehicleNumber, vehicleType, documents } = req.body;
 
     const society = await Society.findOne({
       where: { inviteLinkToken: token, status: 'approved' },
@@ -48,9 +48,35 @@ const registerMember = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invite link has expired.' });
     }
 
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'User with this email already registered.' });
+    const existingEmail = await User.findOne({ where: { email } });
+    if (existingEmail) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'This email address is already registered. Please sign in or use a different email.' 
+      });
+    }
+
+    const existingPhone = await User.findOne({ where: { phone } });
+    if (existingPhone) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Mobile phone ${phone} is already registered. Please use a different phone number.` 
+      });
+    }
+
+    // Check duplicate vehicle number in society if vehicle details provided
+    let normalizedVehicleNum = null;
+    if (vehicleNumber && vehicleNumber.trim()) {
+      normalizedVehicleNum = vehicleNumber.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
+      const existingVehicle = await Vehicle.findOne({
+        where: { societyId: society.id, vehicleNumber: normalizedVehicleNum },
+      });
+      if (existingVehicle) {
+        return res.status(400).json({
+          success: false,
+          message: `Vehicle number ${normalizedVehicleNum} is already registered in this society.`,
+        });
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -65,18 +91,51 @@ const registerMember = async (req, res, next) => {
       status: 'pending',
     });
 
+    // Create initial primary vehicle pass application if provided
+    let createdVehicle = null;
+    if (normalizedVehicleNum) {
+      createdVehicle = await Vehicle.create({
+        memberId: user.id,
+        societyId: society.id,
+        vehicleNumber: normalizedVehicleNum,
+        vehicleType: vehicleType === '2wheeler' ? '2wheeler' : '4wheeler',
+        passType: 'regular',
+        documents: documents || [],
+        status: 'pending',
+      });
+
+      await logAudit({
+        actorRole: 'public_member',
+        action: 'vehicle_registered',
+        targetType: 'vehicle',
+        targetId: createdVehicle.id,
+        metadata: { vehicleNumber: normalizedVehicleNum, societyId: society.id, memberId: user.id },
+      });
+    }
+
     await logAudit({
       actorRole: 'public_member',
       action: 'member_registered',
       targetType: 'user',
       targetId: user.id,
-      metadata: { societyId: society.id, email },
+      metadata: { societyId: society.id, email, vehicleNumber: normalizedVehicleNum },
     });
 
     res.status(201).json({
       success: true,
-      message: 'Registration submitted successfully. Pending Society Admin approval.',
-      data: { id: user.id, name: user.name, email: user.email, status: user.status },
+      message: 'Registration and vehicle pass application submitted successfully! Pending Society Admin approval.',
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+        vehicle: createdVehicle ? {
+          id: createdVehicle.id,
+          vehicleNumber: createdVehicle.vehicleNumber,
+          vehicleType: createdVehicle.vehicleType,
+          status: createdVehicle.status,
+        } : null,
+      },
     });
   } catch (error) {
     next(error);

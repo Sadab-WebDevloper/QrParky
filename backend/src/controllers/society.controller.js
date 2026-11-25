@@ -18,22 +18,64 @@ const applySociety = async (req, res, next) => {
   try {
     const { name, address, submittedBy } = req.body;
     // submittedBy format: { name, phone, email }
+    const trimmedName = name.trim();
+    const trimmedAddress = address.trim();
+    const adminEmail = submittedBy.email.trim();
+    const adminPhone = submittedBy.phone.trim();
 
-    // Check if society with same name or email already submitted
-    const existingSociety = await Society.findOne({ where: { name } });
+    // 1. Check if society with same name already exists (case-insensitive check)
+    const existingSociety = await Society.findOne({
+      where: sequelize.where(
+        sequelize.fn('LOWER', sequelize.col('name')),
+        trimmedName.toLowerCase()
+      ),
+    });
+
     if (existingSociety) {
-      return res.status(400).json({ success: false, message: 'A society with this name has already been submitted.' });
+      if (existingSociety.status === 'approved') {
+        return res.status(400).json({
+          success: false,
+          message: `Society "${trimmedName}" is already registered and approved. Please sign in to the portal or contact support.`,
+        });
+      } else if (existingSociety.status === 'pending') {
+        return res.status(400).json({
+          success: false,
+          message: `An onboarding application for "${trimmedName}" has already been submitted and is pending review by the administrator.`,
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: `A previous application for "${trimmedName}" was rejected. Please contact support or use a different name.`,
+        });
+      }
     }
 
-    const existingUser = await User.findOne({ where: { email: submittedBy.email } });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'User with submitted email already exists.' });
+    // 2. Check if admin email is already registered as an existing User
+    const existingUserEmail = await User.findOne({ where: { email: adminEmail } });
+    if (existingUserEmail) {
+      return res.status(400).json({
+        success: false,
+        message: `An account with email "${adminEmail}" already exists. Please use a different administrator email address.`,
+      });
+    }
+
+    // 3. Check if admin phone is already registered as an existing User
+    const existingUserPhone = await User.findOne({ where: { phone: adminPhone } });
+    if (existingUserPhone) {
+      return res.status(400).json({
+        success: false,
+        message: `Mobile phone number "${adminPhone}" is already registered with another account. Please use a different phone number.`,
+      });
     }
 
     const society = await Society.create({
-      name,
-      address,
-      submittedBy,
+      name: trimmedName,
+      address: trimmedAddress,
+      submittedBy: {
+        name: submittedBy.name.trim(),
+        email: adminEmail,
+        phone: adminPhone,
+      },
       status: 'pending',
     });
 

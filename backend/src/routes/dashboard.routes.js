@@ -5,6 +5,7 @@ const {
   getAuditLogs,
   getAllUsers,
   getSocietyAdminStats,
+  getSocietyPendingCheck,
   getSocietyAuditLogs,
   getSupportFeedback,
 } = require('../controllers/dashboard.controller');
@@ -19,6 +20,7 @@ router.get('/admin/support-feedback', authenticate, authorize('super_admin'), ge
 
 // Society Admin Dashboards
 router.get('/society-admin/dashboard/stats', authenticate, authorize('society_admin', 'super_admin'), getSocietyAdminStats);
+router.get('/society-admin/pending-check', authenticate, authorize('society_admin', 'super_admin'), getSocietyPendingCheck);
 router.get('/society-admin/audit-logs', authenticate, authorize('society_admin', 'super_admin'), getSocietyAuditLogs);
 
 module.exports = router;

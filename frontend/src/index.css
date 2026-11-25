@@ -89,6 +89,53 @@
   .animate-shimmer {
     animation: shimmer 2.5s infinite;
   }
+
+  /* Smooth Dropdown Animation */
+  .animate-dropdown {
+    animation: dropdownSlideFade 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transform-origin: top right;
+  }
+
+  /* Smooth Modal Backdrop Animation */
+  .animate-backdrop {
+    animation: backdropFade 0.24s ease-out forwards;
+  }
+
+  /* Smooth Modal Scale & Pop Animation */
+  .animate-modal {
+    animation: modalPopUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes dropdownSlideFade {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes backdropFade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPopUp {
+  0% {
+    opacity: 0;
+    transform: scale(0.93) translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 @keyframes floatSlow {
@@ -162,4 +209,22 @@
 }
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
+}
+
+/* ============================================================== */
+/* PRINT STYLES: Hide web UI chrome during browser print */
+/* ============================================================== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header,
+  nav,
+  footer,
+  button,
+  .no-print {
+    display: none !important;
+  }
 }

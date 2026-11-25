@@ -3,6 +3,8 @@ const { encryptPayload, decryptPayload } = require('../utils/cryptoUtils');
 const { generateQRDataUrl } = require('../utils/qrGenerator');
 const { logAudit } = require('../utils/auditLogger');
 const { sendPremiumPassNotificationToSuperAdmin } = require('../utils/emailService');
+const config = require('../config/env');
+const { ROLES } = require('../config/constants');
 
 /**
  * Use Case 3: Member submits vehicle registration
@@ -158,97 +160,56 @@ const approveVehicle = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Vehicle status is currently '${vehicle.status}'.` });
     }
 
-    const selectedPassType = passType || vehicle.passType || 'regular';
+    // Generate Encrypted QR Code record (for preview / ready state)
+    const qrPayload = {
+      vehicleId: vehicle.id,
+      societyId: vehicle.societyId,
+      vehicleNumber: vehicle.vehicleNumber,
+      issuedAt: new Date().toISOString(),
+    };
+    const encryptedToken = encryptPayload(qrPayload);
+    const verificationUrl = `${config.frontendUrl}/pass/verify/${encryptedToken}`;
+    const qrImageUrl = await generateQRDataUrl(verificationUrl);
 
-    if (selectedPassType === 'regular') {
-      // 1. Generate Encrypted QR Code Immediately for Regular Pass (Free)
-      const qrPayload = {
+    const [qrRecord, created] = await QRCode.findOrCreate({
+      where: { vehicleId: vehicle.id },
+      defaults: {
         vehicleId: vehicle.id,
-        societyId: vehicle.societyId,
-        vehicleNumber: vehicle.vehicleNumber,
-        issuedAt: new Date().toISOString(),
-      };
-      const encryptedToken = encryptPayload(qrPayload);
-      const qrImageUrl = await generateQRDataUrl(encryptedToken);
+        payloadEncrypted: encryptedToken,
+        qrImageUrl,
+        isActive: false, // inactive until ₹299 payment
+      },
+    });
 
-      const [qrRecord, created] = await QRCode.findOrCreate({
-        where: { vehicleId: vehicle.id },
-        defaults: {
-          vehicleId: vehicle.id,
-          payloadEncrypted: encryptedToken,
-          qrImageUrl,
-          isActive: true,
-        },
-      });
-
-      if (!created) {
-        await qrRecord.update({
-          payloadEncrypted: encryptedToken,
-          qrImageUrl,
-          isActive: true,
-          revokedAt: null,
-        });
-      }
-
-      await vehicle.update({
-        status: 'active',
-        passType: 'regular',
-        reviewedBy: req.user.id,
-        reviewedAt: new Date(),
-      });
-
-      await logAudit({
-        actorId: req.user.id,
-        actorRole: req.user.role,
-        action: 'vehicle_approved_regular_qr',
-        targetType: 'vehicle',
-        targetId: vehicle.id,
-        metadata: { passType: 'regular', status: 'active' },
-      });
-
-      return res.json({
-        success: true,
-        message: 'Regular QR Pass generated and issued successfully! Vehicle is now active.',
-        data: vehicle,
-      });
-    } else {
-      // 2. Professional Pass (Requires Payment)
-      await vehicle.update({
-        status: 'awaiting_payment',
-        passType: 'professional',
-        reviewedBy: req.user.id,
-        reviewedAt: new Date(),
-      });
-
-      await logAudit({
-        actorId: req.user.id,
-        actorRole: req.user.role,
-        action: 'vehicle_approved_professional',
-        targetType: 'vehicle',
-        targetId: vehicle.id,
-        metadata: { passType: 'professional', status: 'awaiting_payment' },
-      });
-
-      // Notify Super Admin that vehicle was approved for Professional Pass and awaits payment
-      const society = await Society.findByPk(vehicle.societyId);
-      const member = await User.findByPk(vehicle.memberId);
-      sendPremiumPassNotificationToSuperAdmin({
-        societyName: society?.name || 'Housing Society',
-        memberName: member?.name || 'Member',
-        memberEmail: member?.email || 'N/A',
-        memberPhone: member?.phone || 'N/A',
-        vehicleNumber: vehicle.vehicleNumber,
-        vehicleType: vehicle.vehicleType,
-        fee: '₹499',
-        status: 'Approved by Society Admin (Awaiting Member Payment)',
-      }).catch(() => {});
-
-      return res.json({
-        success: true,
-        message: 'Vehicle approved for Professional Pass. Member can now complete checkout to activate.',
-        data: vehicle,
+    if (!created) {
+      await qrRecord.update({
+        payloadEncrypted: encryptedToken,
+        qrImageUrl,
+        isActive: false,
+        revokedAt: null,
       });
     }
+
+    await vehicle.update({
+      status: 'awaiting_payment',
+      reviewedBy: req.user.id,
+      reviewedAt: new Date(),
+    });
+
+    await logAudit({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'vehicle_approved_awaiting_payment',
+      targetType: 'vehicle',
+      targetId: vehicle.id,
+      metadata: { status: 'awaiting_payment', fee: 299 },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Vehicle approved by Committee! Member must pay ₹299 pass fee to unlock & download the pass.',
+      data: vehicle,
+    });
   } catch (error) {
     next(error);
   }
@@ -320,16 +281,18 @@ const getVehicleQR = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Vehicle not found or not in your society.' });
     }
 
-    if (vehicle.status !== 'active') {
+    if (vehicle.status !== 'active' && vehicle.status !== 'awaiting_payment') {
       return res.status(403).json({
         success: false,
         message: `QR code vault is restricted. Vehicle status is '${vehicle.status}'. Activation requires approval/payment verification.`,
       });
     }
 
-    if (!vehicle.qrCode || !vehicle.qrCode.isActive) {
+    if (!vehicle.qrCode) {
       return res.status(404).json({ success: false, message: 'QR Code record not found or revoked.' });
     }
+
+    const isLocked = vehicle.status === 'awaiting_payment';
 
     res.json({
       success: true,
@@ -338,11 +301,14 @@ const getVehicleQR = async (req, res, next) => {
         vehicleNumber: vehicle.vehicleNumber,
         vehicleType: vehicle.vehicleType,
         passType: vehicle.passType,
+        status: vehicle.status,
+        isLocked,
+        fee: 299,
         ownerName: vehicle.owner?.name || 'Resident',
         ownerPhone: vehicle.owner?.phone || '',
         societyName: vehicle.society?.name || 'Society',
         qrImageUrl: vehicle.qrCode.qrImageUrl,
-        payloadEncrypted: vehicle.qrCode.payloadEncrypted,
+        payloadEncrypted: isLocked ? null : vehicle.qrCode.payloadEncrypted,
         generatedAt: vehicle.qrCode.generatedAt,
         expiresAt: vehicle.qrCode.expiresAt,
       },
@@ -409,11 +375,26 @@ const verifyQRToken = async (req, res, next) => {
       ],
     });
 
+    // Lookup Society Admin for emergency contact / wrong parking resolution
+    const societyAdmin = await User.findOne({
+      where: {
+        societyId: vehicle ? vehicle.societyId : societyId,
+        role: ROLES.SOCIETY_ADMIN,
+      },
+      attributes: ['name', 'phone', 'email'],
+    });
+
     if (!vehicle || vehicle.status !== 'active') {
       return res.status(400).json({
         success: false,
         valid: false,
-        message: 'ACCESS DENIED. Vehicle is inactive or unverified.',
+        message: 'ACCESS DENIED. Vehicle pass is inactive, pending approval, or unverified.',
+        data: vehicle ? {
+          vehicleNumber: vehicle.vehicleNumber,
+          societyName: vehicle.society?.name || 'Society',
+          adminName: societyAdmin?.name || 'Society Admin',
+          adminPhone: societyAdmin?.phone || '',
+        } : null,
       });
     }
 
@@ -422,19 +403,31 @@ const verifyQRToken = async (req, res, next) => {
         success: false,
         valid: false,
         message: 'ACCESS DENIED. QR Code has been revoked or expired.',
+        data: {
+          vehicleNumber: vehicle.vehicleNumber,
+          societyName: vehicle.society?.name || 'Society',
+          adminName: societyAdmin?.name || 'Society Admin',
+          adminPhone: societyAdmin?.phone || '',
+        },
       });
     }
 
     res.json({
       success: true,
       valid: true,
-      message: 'ACCESS GRANTED. Verified Society Vehicle.',
+      message: 'ACCESS GRANTED. Verified Society Vehicle Pass.',
       data: {
         vehicleNumber: vehicle.vehicleNumber,
         vehicleType: vehicle.vehicleType,
-        societyName: vehicle.society.name,
-        ownerName: vehicle.owner.name,
-        ownerPhone: vehicle.owner.phone,
+        passType: vehicle.passType,
+        status: vehicle.status,
+        societyName: vehicle.society?.name || 'Authorized Society',
+        societyAddress: vehicle.society?.address || '',
+        ownerName: vehicle.owner?.name || 'Registered Resident',
+        ownerPhone: vehicle.owner?.phone || '',
+        adminName: societyAdmin?.name || 'Society Admin / Security Desk',
+        adminPhone: societyAdmin?.phone || '',
+        adminEmail: societyAdmin?.email || '',
         issuedAt,
       },
     });

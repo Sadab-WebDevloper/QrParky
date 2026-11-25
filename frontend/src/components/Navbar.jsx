@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
 import Modal from './Modal';
-import { QrCode, ShieldCheck, LogOut, User, Building2, Car, ChevronDown, LayoutDashboard, AlertCircle, Sun, Moon, Camera, LifeBuoy } from 'lucide-react';
+import { QrCode, ShieldCheck, LogOut, User, Building2, Car, ChevronDown, LayoutDashboard, AlertCircle, Sun, Moon } from 'lucide-react';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
 
 export default function Navbar() {
@@ -78,18 +78,6 @@ export default function Navbar() {
               {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-zinc-700" />}
             </button>
 
-            {/* Gate Scanner Button (Only shown for Public / Guard at gate and Society Admin; hidden for Resident Members & Super Admin) */}
-            {(!user || user.role === ROLES.SOCIETY_ADMIN) && (
-              <Link
-                to="/scan"
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-400/30 dark:border-amber-500/30 transition shadow-sm whitespace-nowrap shrink-0"
-                title="Open Security Gate Scanner"
-              >
-                <Camera className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="hidden sm:inline">Gate Scanner</span>
-              </Link>
-            )}
-
             {user ? (
               <div className="flex items-center gap-2 sm:gap-3">
                 
@@ -112,7 +100,7 @@ export default function Navbar() {
 
                   {/* Dropdown Menu */}
                   {dropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-64 glass-card rounded-2xl border border-amber-300/30 dark:border-amber-500/20 shadow-2xl p-2 bg-white dark:bg-[#121214] z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <div className="absolute right-0 mt-2 w-64 glass-card rounded-2xl border border-amber-300/30 dark:border-amber-500/20 shadow-2xl p-2 bg-white dark:bg-[#121214] z-50 animate-dropdown">
                       
                       {/* User Info Header */}
                       <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 mb-1">
@@ -139,19 +127,6 @@ export default function Navbar() {
                         <LayoutDashboard className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
                         View Dashboard
                       </Link>
-
-                      {/* Help & Support Trigger */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDropdownOpen(false);
-                          window.dispatchEvent(new CustomEvent('open-help-modal'));
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition text-left cursor-pointer"
-                      >
-                        <LifeBuoy className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                        Help & Feedback
-                      </button>
 
                       {/* Sign Out Trigger */}
                       <button

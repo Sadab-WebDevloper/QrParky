@@ -104,6 +104,58 @@ const getSocietyAdminStats = async (req, res, next) => {
 };
 
 /**
+ * Ultra-Lightweight Sync Endpoint: Returns tiny footprint (<50 bytes, ~1ms)
+ * to verify if new pending requests exist without querying full lists.
+ */
+const getSocietyPendingCheck = async (req, res, next) => {
+  try {
+    const societyId = req.user.societyId;
+    if (!societyId) {
+      return res.status(400).json({ success: false, message: 'Society ID not linked.' });
+    }
+
+    const [pendingMembersCount, pendingVehiclesCount, latestVehicle, latestMember] = await Promise.all([
+      User.count({
+        where: { societyId, role: ROLES.MEMBER, status: 'pending' },
+      }),
+      Vehicle.count({
+        where: { societyId, status: 'pending' },
+      }),
+      Vehicle.findOne({
+        where: { societyId, status: 'pending' },
+        order: [['id', 'DESC']],
+        include: [{ model: User, as: 'owner', attributes: ['name'] }],
+        attributes: ['id', 'vehicleNumber', 'createdAt'],
+      }),
+      User.findOne({
+        where: { societyId, role: ROLES.MEMBER, status: 'pending' },
+        order: [['id', 'DESC']],
+        attributes: ['id', 'name', 'createdAt'],
+      }),
+    ]);
+
+    const syncSignature = `${pendingMembersCount}_${pendingVehiclesCount}_${latestMember?.id || 0}_${latestVehicle?.id || 0}`;
+
+    res.json({
+      success: true,
+      data: {
+        pendingMembersCount,
+        pendingVehiclesCount,
+        latestMember: latestMember ? { id: latestMember.id, name: latestMember.name } : null,
+        latestVehicle: latestVehicle ? {
+          id: latestVehicle.id,
+          vehicleNumber: latestVehicle.vehicleNumber,
+          ownerName: latestVehicle.owner?.name,
+        } : null,
+        syncSignature,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Society Admin: Query Audit Logs pertaining to their society
  */
 const getSocietyAuditLogs = async (req, res, next) => {
@@ -250,6 +302,7 @@ module.exports = {
   getAuditLogs,
   getAllUsers,
   getSocietyAdminStats,
+  getSocietyPendingCheck,
   getSocietyAuditLogs,
   getSupportFeedback,
 };

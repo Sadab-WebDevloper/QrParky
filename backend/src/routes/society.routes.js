@@ -17,12 +17,12 @@ const { z } = require('zod');
 
 const applySocietySchema = z.object({
   body: z.object({
-    name: z.string().min(3),
-    address: z.string().min(5),
+    name: z.string().min(3, 'Society name must be at least 3 characters'),
+    address: z.string().min(5, 'Full society address must be at least 5 characters'),
     submittedBy: z.object({
-      name: z.string().min(2),
-      email: z.string().email(),
-      phone: z.string().min(10),
+      name: z.string().min(2, 'Administrator name is required'),
+      email: z.string().email('Please enter a valid administrator email address'),
+      phone: z.string().regex(/^\d{10}$/, 'Mobile phone number must be exactly 10 digits'),
     }),
   }),
 });

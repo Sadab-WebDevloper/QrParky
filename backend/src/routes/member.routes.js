@@ -15,10 +15,13 @@ const { z } = require('zod');
 
 const registerSchema = z.object({
   body: z.object({
-    name: z.string().min(2),
-    email: z.string().email(),
-    phone: z.string().min(10),
-    password: z.string().min(6),
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    email: z.string().email('Please enter a valid email address'),
+    phone: z.string().regex(/^\d{10}$/, 'Mobile phone must be exactly 10 digits'),
+    password: z.string().min(8, 'Password must be at least 8 characters long'),
+    vehicleNumber: z.string().min(3).max(20).optional(),
+    vehicleType: z.enum(['2wheeler', '4wheeler']).optional(),
+    documents: z.array(z.string()).optional(),
   }),
 });
 

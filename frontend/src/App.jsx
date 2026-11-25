@@ -14,6 +14,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import ScannerPage from './pages/ScannerPage';
 import SocietyApplyPage from './pages/SocietyApplyPage';
 import MemberRegisterPage from './pages/MemberRegisterPage';
+import PassVerifyPage from './pages/PassVerifyPage';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import SocietyAdminDashboard from './pages/SocietyAdminDashboard';
 import MemberDashboard from './pages/MemberDashboard';
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/scan" element={<ScannerPage />} />
           <Route path="/apply-society" element={<SocietyApplyPage />} />
           <Route path="/register/:token" element={<MemberRegisterPage />} />
+          <Route path="/pass/verify/:token" element={<PassVerifyPage />} />
 
           {/* Protected Dashboards */}
           <Route

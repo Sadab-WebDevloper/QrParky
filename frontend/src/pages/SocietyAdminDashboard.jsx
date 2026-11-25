@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import API from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import { 
@@ -26,10 +27,13 @@ import {
   Sparkles,
   AlertTriangle,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  BellRing,
+  X
 } from 'lucide-react';
 
 export default function SocietyAdminDashboard() {
+  const { user } = useAuth();
   const toast = useToast();
   const [stats, setStats] = useState(null);
   const [members, setMembers] = useState([]);
@@ -63,20 +67,56 @@ export default function SocietyAdminDashboard() {
     submitting: false
   });
 
+  // In-App Live Notification States & Tracking (Ultra-low footprint)
+  const [liveAlert, setLiveAlert] = useState(null);
+  const lastSignatureRef = useRef(null);
+  const prevCountsRef = useRef({ members: 0, vehicles: 0 });
+
+  // Synthesize gentle notification chime without external file dependency
+  const playNotificationChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Note D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // Note A5
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.45);
+    } catch (e) {
+      // Audio autoplay policy guard
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, membersRes, vehiclesRes, inviteRes] = await Promise.all([
+      const [statsRes, membersRes, vehiclesRes, inviteRes, checkRes] = await Promise.all([
         API.get('/society-admin/dashboard/stats'),
         API.get('/society-admin/members?limit=100'),
         API.get('/society-admin/vehicles'),
         API.get('/society/me/invite-link'),
+        API.get('/society-admin/pending-check'),
       ]);
 
       if (statsRes.data?.success) setStats(statsRes.data.data);
-      if (membersRes.data?.success) setMembers(membersRes.data.data);
-      if (vehiclesRes.data?.success) setVehicles(vehiclesRes.data.data);
+      if (membersRes.data?.success) setMembers(membersRes.data.data || []);
+      if (vehiclesRes.data?.success) setVehicles(vehiclesRes.data.data || []);
       if (inviteRes.data?.success) setInviteLink(inviteRes.data.data);
+
+      if (checkRes.data?.success && checkRes.data?.data) {
+        lastSignatureRef.current = checkRes.data.data.syncSignature;
+        prevCountsRef.current = {
+          members: checkRes.data.data.pendingMembersCount || 0,
+          vehicles: checkRes.data.data.pendingVehiclesCount || 0,
+        };
+      }
     } catch (err) {
       toast.error('Failed to load society admin dashboard data.');
     } finally {
@@ -84,8 +124,92 @@ export default function SocietyAdminDashboard() {
     }
   };
 
+  // Ultra-lightweight background sync (consumes <50 bytes and ~1ms query per check)
+  const pollForNewRequests = async () => {
+    // 1. Tab Visibility Guard: Pause completely when browser tab is inactive/minimized
+    if (typeof document !== 'undefined' && document.hidden) {
+      return;
+    }
+
+    try {
+      // 2. Micro-check endpoint
+      const checkRes = await API.get('/society-admin/pending-check');
+      if (!checkRes.data?.success || !checkRes.data?.data) return;
+
+      const { pendingMembersCount, pendingVehiclesCount, latestMember, latestVehicle, syncSignature } = checkRes.data.data;
+
+      // 3. ZERO WORK if nothing has changed on server
+      if (lastSignatureRef.current === syncSignature) {
+        return;
+      }
+
+      // Check if counts increased (new incoming request)
+      const hasNewRequest =
+        pendingMembersCount > prevCountsRef.current.members ||
+        pendingVehiclesCount > prevCountsRef.current.vehicles;
+
+      if (hasNewRequest && lastSignatureRef.current !== null) {
+        playNotificationChime();
+
+        const applicantName = latestVehicle?.ownerName || latestMember?.name || 'New Resident';
+        const plateNumber = latestVehicle?.vehicleNumber || '';
+        const totalNew = pendingMembersCount + pendingVehiclesCount;
+
+        setLiveAlert({
+          id: Date.now(),
+          name: applicantName,
+          vehicleNumber: plateNumber,
+          count: totalNew,
+          targetTab: latestVehicle ? 'vehicles' : 'members',
+          timestamp: new Date(),
+        });
+
+        toast.info(
+          `🔔 New Request: ${applicantName}${plateNumber ? ` (${plateNumber})` : ''} has submitted an application!`
+        );
+      }
+
+      // Update cached signature and counts
+      lastSignatureRef.current = syncSignature;
+      prevCountsRef.current = {
+        members: pendingMembersCount,
+        vehicles: pendingVehiclesCount,
+      };
+
+      // 4. ONLY fetch full lists when a verified change is detected
+      const [membersRes, vehiclesRes, statsRes] = await Promise.all([
+        API.get('/society-admin/members?limit=100'),
+        API.get('/society-admin/vehicles'),
+        API.get('/society-admin/dashboard/stats'),
+      ]);
+
+      if (membersRes.data?.success) setMembers(membersRes.data.data || []);
+      if (vehiclesRes.data?.success) setVehicles(vehiclesRes.data.data || []);
+      if (statsRes.data?.success) setStats(statsRes.data.data);
+    } catch (err) {
+      // Silent error for background fail-safe
+    }
+  };
+
   useEffect(() => {
     fetchData();
+
+    // Lightweight interval (15s) with tab visibility protection
+    const interval = setInterval(() => {
+      pollForNewRequests();
+    }, 15000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        pollForNewRequests();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Member Actions
@@ -135,7 +259,7 @@ export default function SocietyAdminDashboard() {
     try {
       const res = await API.post(`/society-admin/vehicles/${id}/approve`, { passType });
       if (res.data?.success) {
-        toast.success('Vehicle approved! Encrypted QR Pass issued.');
+        toast.success(res.data?.message || 'Vehicle approved by Committee! Member can now pay ₹299 pass fee to activate.');
         fetchData();
       }
     } catch (err) {
@@ -240,15 +364,366 @@ export default function SocietyAdminDashboard() {
     toast.success('Member registration link copied to clipboard!');
   };
 
+  // Dedicated Poster Printer (Isolates print exclusively to the gate poster card)
+  const handlePrintPoster = () => {
+    if (!inviteUrl) {
+      toast.error('Registration link is not ready yet.');
+      return;
+    }
+
+    const societyName = user?.societyName || 'Society Access Portal';
+    const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(inviteUrl)}`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const pri = iframe.contentWindow;
+    pri.document.open();
+    pri.document.write(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>Resident Registration Poster - ${societyName}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              margin: 0;
+              padding: 24px;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              background-color: #ffffff;
+              color: #18181b;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 90vh;
+            }
+            .poster-card {
+              width: 100%;
+              max-width: 440px;
+              margin: 0 auto;
+              padding: 36px 28px;
+              border: 3.5px dashed #f59e0b;
+              border-radius: 24px;
+              text-align: center;
+              background: #ffffff;
+            }
+            .brand-header {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              margin-bottom: 12px;
+            }
+            .logo-icon {
+              width: 34px;
+              height: 34px;
+              background: #f59e0b;
+              border-radius: 8px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-weight: 900;
+              font-size: 15px;
+              color: #000;
+            }
+            .brand-title {
+              font-size: 18px;
+              font-weight: 800;
+              color: #09090b;
+            }
+            .society-badge {
+              display: inline-block;
+              background: #fef3c7;
+              color: #92400e;
+              border: 1px solid #fde68a;
+              font-size: 13px;
+              font-weight: 800;
+              padding: 5px 16px;
+              border-radius: 9999px;
+              margin-bottom: 16px;
+            }
+            .main-title {
+              font-size: 18px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #09090b;
+              margin: 0 0 6px 0;
+            }
+            .subtitle {
+              font-size: 12px;
+              color: #52525b;
+              margin: 0 0 20px 0;
+              font-weight: 500;
+            }
+            .qr-wrapper {
+              display: inline-block;
+              padding: 16px;
+              background: #fafafa;
+              border: 1.5px solid #e4e4e7;
+              border-radius: 18px;
+              margin-bottom: 20px;
+            }
+            .qr-wrapper img {
+              width: 240px;
+              height: 240px;
+              display: block;
+            }
+            .steps-container {
+              background: #fafafa;
+              border: 1px solid #f4f4f5;
+              border-radius: 14px;
+              padding: 14px 18px;
+              text-align: left;
+              max-width: 360px;
+              margin: 0 auto;
+            }
+            .steps-header {
+              font-size: 11px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #18181b;
+              margin-bottom: 6px;
+              text-align: center;
+            }
+            .step-item {
+              font-size: 11px;
+              color: #3f3f46;
+              line-height: 1.6;
+            }
+            .footer-note {
+              margin-top: 20px;
+              font-size: 10px;
+              color: #a1a1aa;
+              font-weight: 500;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="poster-card">
+            <div class="brand-header">
+              <div class="logo-icon">QP</div>
+              <span class="brand-title">QrParky Access</span>
+            </div>
+            
+            <div class="society-badge">📍 ${societyName}</div>
+            
+            <h1 class="main-title">Resident Vehicle Registration</h1>
+            <p class="subtitle">Scan with your smartphone camera to request official windshield QR Pass</p>
+            
+            <div class="qr-wrapper">
+              <img id="qr-img" src="${qrSrc}" alt="Resident Registration QR Code" />
+            </div>
+
+            <div class="steps-container">
+              <div class="steps-header">3 Simple Steps to Register:</div>
+              <div class="step-item">1. 📷 Open camera app and scan this QR code</div>
+              <div class="step-item">2. 📝 Enter flat number & vehicle plate details</div>
+              <div class="step-item">3. 🛡️ Collect approved windshield QR pass from admin</div>
+            </div>
+
+            <div class="footer-note">
+              Security Gate & Notice Board Official Poster • QrParky
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    pri.document.close();
+
+    const img = pri.document.getElementById('qr-img');
+    const triggerPrint = () => {
+      pri.focus();
+      pri.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1500);
+    };
+
+    if (img && !img.complete) {
+      img.onload = triggerPrint;
+      img.onerror = triggerPrint;
+    } else {
+      setTimeout(triggerPrint, 300);
+    }
+  };
+
+  // Dedicated Vehicle Pass Sticker Printer (Isolates pass print)
+  const handlePrintVehiclePass = (passData) => {
+    if (!passData) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const pri = iframe.contentWindow;
+    pri.document.open();
+    pri.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>QrParky Pass - ${passData.vehicleNumber}</title>
+          <style>
+            @page {
+              size: auto;
+              margin: 10mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              margin: 0;
+              padding: 20px;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              background: #fff;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 90vh;
+            }
+            .pass-card {
+              width: 320px;
+              border: 2px dashed #f59e0b;
+              border-radius: 20px;
+              padding: 20px;
+              text-align: center;
+              background: #fff;
+            }
+            .pass-header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 1px solid #e5e7eb;
+              padding-bottom: 10px;
+              margin-bottom: 12px;
+            }
+            .soc-name {
+              font-size: 13px;
+              font-weight: 800;
+              color: #111827;
+              text-align: left;
+            }
+            .active-badge {
+              font-size: 10px;
+              font-weight: 800;
+              color: #047857;
+              background: #ecfdf5;
+              border: 1px solid #a7f3d0;
+              padding: 2px 8px;
+              border-radius: 9999px;
+            }
+            .qr-box {
+              padding: 10px;
+              background: #f9fafb;
+              border: 1px solid #e5e7eb;
+              border-radius: 12px;
+              display: inline-block;
+              margin-bottom: 12px;
+            }
+            .qr-box img {
+              width: 170px;
+              height: 170px;
+              display: block;
+            }
+            .veh-num {
+              font-family: monospace;
+              font-size: 20px;
+              font-weight: 900;
+              letter-spacing: 1px;
+              color: #111827;
+              margin-bottom: 4px;
+            }
+            .owner-name {
+              font-size: 11px;
+              color: #6b7280;
+              margin-bottom: 12px;
+            }
+            .pass-footer {
+              border-top: 1px solid #e5e7eb;
+              padding-top: 8px;
+              font-size: 10px;
+              color: #9ca3af;
+              display: flex;
+              justify-content: space-between;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="pass-card">
+            <div class="pass-header">
+              <div class="soc-name">📍 ${passData.societyName || 'Society Pass'}</div>
+              <div class="active-badge">● ACTIVE PASS</div>
+            </div>
+            <div class="qr-box">
+              <img id="qr-img" src="${passData.qrImageUrl}" alt="Vehicle QR Pass" />
+            </div>
+            <div class="veh-num">${passData.vehicleNumber}</div>
+            <div class="owner-name">${passData.ownerName || 'Resident'} • Windshield Permit</div>
+            <div class="pass-footer">
+              <span>🛡️ Tamper-Proof</span>
+              <span>Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}</span>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    pri.document.close();
+
+    const img = pri.document.getElementById('qr-img');
+    const triggerPrint = () => {
+      pri.focus();
+      pri.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1500);
+    };
+
+    if (img && !img.complete) {
+      img.onload = triggerPrint;
+      img.onerror = triggerPrint;
+    } else {
+      setTimeout(triggerPrint, 300);
+    }
+  };
+
   // Filter computations
   const pendingMembers = members.filter(m => m.status === 'pending' && m.role !== 2);
   const pendingVehicles = vehicles.filter(v => v.status === 'pending');
+  const awaitingPaymentVehicles = vehicles.filter(v => v.status === 'awaiting_payment');
   const activeVehicles = vehicles.filter(v => v.status === 'active');
 
   const filteredVehicles = vehicles.filter(v => {
     const matchesFilter = 
       vehicleFilter === 'all' ? true :
       vehicleFilter === 'pending' ? v.status === 'pending' :
+      vehicleFilter === 'awaiting_payment' ? v.status === 'awaiting_payment' :
       vehicleFilter === 'active' ? v.status === 'active' :
       v.status === vehicleFilter;
 
@@ -302,7 +777,7 @@ export default function SocietyAdminDashboard() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <button
+          {/* <button
             onClick={fetchData}
             disabled={loading}
             className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold border border-zinc-200 dark:border-zinc-700 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
@@ -310,17 +785,64 @@ export default function SocietyAdminDashboard() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
-          </button>
+          </button> */}
 
-          <button
+          {/* <button
             onClick={() => setActiveTab('invite')}
             className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs sm:text-sm hover:opacity-95 shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
           >
             <LinkIcon className="w-3.5 h-3.5" />
             <span>Invite Residents</span>
-          </button>
+          </button> */}
         </div>
       </div>
+
+      {/* In-App Live Notification Banner (Alerts Admin when resident applies in real-time) */}
+      {liveAlert && (
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/15 to-amber-500/10 border-2 border-amber-500/50 dark:border-amber-400/40 shadow-xl shadow-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-zinc-950 flex items-center justify-center font-black shadow-md shrink-0">
+              <BellRing className="w-5 h-5 animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500 text-zinc-950 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-950 animate-ping" />
+                  Live Notification
+                </span>
+                <span className="text-xs text-zinc-600 dark:text-zinc-400">Just now</span>
+              </div>
+              <h4 className="text-sm font-extrabold text-zinc-900 dark:text-white mt-0.5">
+                New Request: <span className="text-amber-600 dark:text-amber-400">{liveAlert.name}</span> applied for a vehicle pass {liveAlert.vehicleNumber && <span className="font-mono font-bold">({liveAlert.vehicleNumber})</span>}!
+              </h4>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab(liveAlert.targetTab);
+                if (liveAlert.targetTab === 'vehicles') setVehicleFilter('pending');
+                if (liveAlert.targetTab === 'members') setMemberFilter('pending');
+                setLiveAlert(null);
+              }}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-md transition flex items-center gap-1 cursor-pointer active:scale-95"
+            >
+              <span>Review Now</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLiveAlert(null)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition"
+              title="Dismiss notification"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Overview Stat Cards (Consistent compact & balanced sizing) */}
       {stats && (
@@ -400,10 +922,14 @@ export default function SocietyAdminDashboard() {
           <Car className="w-4 h-4" />
           <span>Vehicle Passes</span>
           {pendingVehicles.length > 0 && (
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 ${
               activeTab === 'vehicles' ? 'bg-zinc-950 text-amber-400' : 'bg-yellow-500 text-zinc-950'
             }`}>
-              {pendingVehicles.length}
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-600"></span>
+              </span>
+              <span>{pendingVehicles.length}</span>
             </span>
           )}
         </button>
@@ -419,10 +945,14 @@ export default function SocietyAdminDashboard() {
           <Users className="w-4 h-4" />
           <span>Residents & Members</span>
           {pendingMembers.length > 0 && (
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 ${
               activeTab === 'members' ? 'bg-zinc-950 text-amber-400' : 'bg-yellow-500 text-zinc-950'
             }`}>
-              {pendingMembers.length}
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-600"></span>
+              </span>
+              <span>{pendingMembers.length}</span>
             </span>
           )}
         </button>
@@ -436,7 +966,7 @@ export default function SocietyAdminDashboard() {
           }`}
         >
           <LinkIcon className="w-4 h-4" />
-          <span>Member Invite & Gate Poster</span>
+          <span>Member Invite</span>
         </button>
       </div>
 
@@ -489,6 +1019,21 @@ export default function SocietyAdminDashboard() {
               </button>
 
               <button
+                onClick={() => setVehicleFilter('awaiting_payment')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  vehicleFilter === 'awaiting_payment'
+                    ? 'bg-amber-500 text-zinc-950 font-bold shadow-sm'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <span>Fee Pending (₹299)</span>
+                {awaitingPaymentVehicles.length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                )}
+                <span>({awaitingPaymentVehicles.length})</span>
+              </button>
+
+              <button
                 onClick={() => setVehicleFilter('active')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                   vehicleFilter === 'active'
@@ -536,11 +1081,15 @@ export default function SocietyAdminDashboard() {
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                           isActive
                             ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/60'
+                            : v.status === 'awaiting_payment'
+                            ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800/60'
                             : isPending
                             ? 'bg-yellow-100 dark:bg-yellow-950/80 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800/60'
                             : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
                         }`}>
-                          {v.status === 'active' ? '● Active Pass' : v.status}
+                          {v.status === 'active' ? '● Active Pass' :
+                           v.status === 'awaiting_payment' ? '🟡 Fee Pending (₹299)' :
+                           v.status === 'pending' ? 'Pending Review' : v.status}
                         </span>
                       </div>
 
@@ -623,7 +1172,29 @@ export default function SocietyAdminDashboard() {
                         </>
                       )}
 
-                      {!isPending && !isActive && (
+                      {v.status === 'awaiting_payment' && (
+                        <div className="flex-1 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-xl">
+                            🟡 Approved by Admin • Awaiting Member Payment (₹299)
+                          </span>
+                          {v.owner?.phone && (
+                            <a
+                              href={`https://api.whatsapp.com/send?phone=${encodeURIComponent(v.owner.phone)}&text=${encodeURIComponent(
+                                `Hello ${v.owner.name},\n\nYour vehicle registration (${v.vehicleNumber}) has been verified & approved by the committee! Please sign in to QrParky to complete the ₹299 sticker fee and download your windshield QR pass.\n\nThank you,\n${user?.societyName || 'Society Committee'}`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition shrink-0 shadow-sm"
+                              title="Remind member on WhatsApp"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              <span>Remind Resident</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+
+                      {!isPending && !isActive && v.status !== 'awaiting_payment' && (
                         <span className="text-zinc-400 text-xs italic">
                           Status: {v.status}
                         </span>
@@ -696,107 +1267,196 @@ export default function SocietyAdminDashboard() {
             </div>
           </div>
 
-          {/* Members Table */}
+          {/* Members Table / Mobile Cards */}
           <div className="glass-card rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white/90 dark:bg-[#121214]">
             {filteredMembers.length === 0 ? (
               <div className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-sm">
                 No resident members found matching your search.
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-zinc-700 dark:text-zinc-300">
-                  <thead className="bg-zinc-100 dark:bg-[#18181b] text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase border-b border-zinc-200 dark:border-zinc-800">
-                    <tr>
-                      <th className="px-6 py-4">Resident</th>
-                      <th className="px-6 py-4">Contact</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4">Vehicles</th>
-                      <th className="px-6 py-4">Joined</th>
-                      <th className="px-6 py-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
-                    {filteredMembers.map((m) => {
-                      const isPending = m.status === 'pending';
+              <>
+                {/* Desktop Table View */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-left text-sm text-zinc-700 dark:text-zinc-300">
+                    <thead className="bg-zinc-100 dark:bg-[#18181b] text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase border-b border-zinc-200 dark:border-zinc-800">
+                      <tr>
+                        <th className="px-6 py-4">Resident</th>
+                        <th className="px-6 py-4">Contact</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Vehicles</th>
+                        <th className="px-6 py-4">Joined</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
+                      {filteredMembers.map((m) => {
+                        const isPending = m.status === 'pending';
 
-                      return (
-                        <tr key={m.id} className="hover:bg-zinc-50 dark:hover:bg-[#18181b]/50 transition">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
-                                {m.name?.charAt(0).toUpperCase()}
+                        return (
+                          <tr key={m.id} className="hover:bg-zinc-50 dark:hover:bg-[#18181b]/50 transition">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
+                                  {m.name?.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-zinc-900 dark:text-white text-sm">{m.name}</div>
+                                  <div className="text-[11px] text-zinc-500">ID: #{m.id}</div>
+                                </div>
                               </div>
-                              <div>
-                                <div className="font-bold text-zinc-900 dark:text-white text-sm">{m.name}</div>
-                                <div className="text-[11px] text-zinc-500">ID: #{m.id}</div>
+                            </td>
+
+                            <td className="px-6 py-4 text-xs">
+                              <div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
+                                <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                                <span>{m.email}</span>
                               </div>
-                            </div>
-                          </td>
+                              <div className="flex items-center gap-1.5 text-zinc-500 mt-0.5 font-mono">
+                                <Phone className="w-3.5 h-3.5 text-zinc-400" />
+                                <span>{m.phone || '—'}</span>
+                              </div>
+                            </td>
 
-                          <td className="px-6 py-4 text-xs">
-                            <div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
-                              <Mail className="w-3.5 h-3.5 text-zinc-400" />
-                              <span>{m.email}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-zinc-500 mt-0.5 font-mono">
-                              <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                              <span>{m.phone || '—'}</span>
-                            </div>
-                          </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                m.status === 'approved'
+                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                                  : isPending
+                                  ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800'
+                                  : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
+                              }`}>
+                                {m.status}
+                              </span>
+                            </td>
 
-                          <td className="px-6 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              m.status === 'approved'
-                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                                : isPending
-                                ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800'
-                                : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
-                            }`}>
-                              {m.status}
-                            </span>
-                          </td>
+                            <td className="px-6 py-4 text-xs">
+                              {m.vehicles && m.vehicles.length > 0 ? (
+                                <span className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-800/40">
+                                  🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-400 dark:text-zinc-500 italic text-xs">None</span>
+                              )}
+                            </td>
 
-                          <td className="px-6 py-4 text-xs">
+                            <td className="px-6 py-4 text-xs text-zinc-500 dark:text-zinc-400">
+                              {new Date(m.createdAt).toLocaleDateString()}
+                            </td>
+
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => setSelectedMember(m)}
+                                  className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-amber-500" />
+                                  <span>Details</span>
+                                </button>
+
+                                {isPending && (
+                                  <button
+                                    onClick={() => handleApproveMember(m.id)}
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Approve</span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Box/Card View */}
+                <div className="sm:hidden space-y-3 p-3">
+                  {filteredMembers.map((m) => {
+                    const isPending = m.status === 'pending';
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-[#141416] shadow-sm space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
+                              {m.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-bold text-zinc-900 dark:text-white text-sm">{m.name}</div>
+                              <div className="text-[11px] text-zinc-500">ID: #{m.id}</div>
+                            </div>
+                          </div>
+
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 ${
+                            m.status === 'approved'
+                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
+                              : isPending
+                              ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800'
+                              : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
+                          }`}>
+                            {m.status}
+                          </span>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-100 dark:border-zinc-800 text-xs space-y-1">
+                          <div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
+                            <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <span className="truncate">{m.email}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-zinc-500 font-mono">
+                            <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                            <span>{m.phone || '—'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs py-1">
+                          <div>
                             {m.vehicles && m.vehicles.length > 0 ? (
-                              <span className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-800/40">
+                              <span className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-800/40 text-[11px]">
                                 🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
                               </span>
                             ) : (
-                              <span className="text-zinc-400 dark:text-zinc-500 italic text-xs">None</span>
+                              <span className="text-zinc-400 dark:text-zinc-500 italic text-[11px]">No vehicles</span>
                             )}
-                          </td>
+                          </div>
+                          <div className="text-[11px] text-zinc-400">
+                            Joined: {new Date(m.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
 
-                          <td className="px-6 py-4 text-xs text-zinc-500 dark:text-zinc-400">
-                            {new Date(m.createdAt).toLocaleDateString()}
-                          </td>
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800/80">
+                          <button
+                            onClick={() => setSelectedMember(m)}
+                            className="py-2 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Details</span>
+                          </button>
 
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => setSelectedMember(m)}
-                                className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-amber-500" />
-                                <span>Details</span>
-                              </button>
-
-                              {isPending && (
-                                <button
-                                  onClick={() => handleApproveMember(m.id)}
-                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Approve</span>
-                                </button>
-                              )}
+                          {isPending ? (
+                            <button
+                              onClick={() => handleApproveMember(m.id)}
+                              className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Approve</span>
+                            </button>
+                          ) : (
+                            <div className="text-center py-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Approved</span>
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -886,7 +1546,8 @@ export default function SocietyAdminDashboard() {
               </div>
 
               <button
-                onClick={() => window.print()}
+                type="button"
+                onClick={handlePrintPoster}
                 className="px-4 py-2 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 font-bold text-xs hover:opacity-90 transition flex items-center gap-1.5 shadow-md cursor-pointer shrink-0"
               >
                 <Printer className="w-3.5 h-3.5" />
@@ -902,6 +1563,12 @@ export default function SocietyAdminDashboard() {
                 </div>
                 <span className="font-extrabold text-base tracking-tight text-zinc-900">QrParky Access</span>
               </div>
+
+              {user?.societyName && (
+                <div className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full inline-block mb-2">
+                  📍 {user.societyName}
+                </div>
+              )}
 
               <h4 className="text-sm font-extrabold text-zinc-900 uppercase tracking-wider mb-1">
                 Resident Vehicle Registration
@@ -1118,6 +1785,14 @@ export default function SocietyAdminDashboard() {
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handlePrintVehiclePass(activeQRData)}
+                className="w-full py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 font-bold text-xs hover:opacity-90 transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-amber-500" /> Print Windshield Sticker
+              </button>
+
               <a
                 href={activeQRData.qrImageUrl}
                 download={`QrParky_${activeQRData.vehicleNumber}.png`}

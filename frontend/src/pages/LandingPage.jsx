@@ -14,7 +14,6 @@ import {
   Shield, 
   FileCheck, 
   ChevronRight,
-  Camera,
   LogIn,
   Zap,
   Lock
@@ -62,12 +61,12 @@ export default function LandingPage() {
                 </Link>
 
                 <Link
-                  to="/scan"
+                  to="/login"
                   className="h-[50px] px-6 rounded-xl bg-white dark:bg-[#141417] hover:bg-zinc-100 dark:hover:bg-[#1f1f23] text-zinc-900 dark:text-white font-bold text-sm sm:text-base border border-zinc-200 dark:border-zinc-800 hover:border-amber-400/60 dark:hover:border-amber-500/50 flex items-center justify-center gap-2 shadow-sm hover:-translate-y-0.5 active:translate-y-0 transition-all whitespace-nowrap"
-                  title="Open Gate Scanner"
+                  title="Sign In to Resident / Admin Portal"
                 >
-                  <Camera className="w-4 h-4 text-amber-500 shrink-0" />
-                  <span>Gate Scanner</span>
+                  <LogIn className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Sign In to Portal</span>
                 </Link>
               </div>
 

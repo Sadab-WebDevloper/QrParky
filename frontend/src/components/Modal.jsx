@@ -16,9 +16,9 @@ export default function Modal({ isOpen, onClose, title, children }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-backdrop overflow-y-auto">
       <div 
-        className="glass-card w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-6 relative bg-white dark:bg-[#121214] max-h-[92vh] flex flex-col my-auto"
+        className="glass-card w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-6 relative bg-white dark:bg-[#121214] max-h-[92vh] flex flex-col my-auto animate-modal"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-3.5 mb-3.5 shrink-0">

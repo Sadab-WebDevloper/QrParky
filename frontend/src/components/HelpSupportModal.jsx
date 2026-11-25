@@ -73,11 +73,11 @@ export default function HelpSupportModal({ isOpen, onClose }) {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-backdrop overflow-y-auto"
       onClick={onClose}
     >
       <div 
-        className="glass-card w-full max-w-lg rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7 relative bg-white dark:bg-[#121215] max-h-[92vh] flex flex-col my-auto"
+        className="glass-card w-full max-w-lg rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 sm:p-7 relative bg-white dark:bg-[#121215] max-h-[92vh] flex flex-col my-auto animate-modal"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -306,7 +306,7 @@ export default function HelpSupportModal({ isOpen, onClose }) {
                 <span>3. How Security Guards Scan Passes</span>
               </div>
               <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed pl-8">
-                Click <strong>"Gate Scanner"</strong> on any mobile phone. Point camera at the windshield sticker. The system verifies encrypted signature in 0.4 seconds and approves gate access.
+                Point any smartphone camera or QR scanner at the windshield sticker. The system instantly verifies the encrypted credentials in 0.4 seconds and approves gate access.
               </p>
             </div>
           </div>

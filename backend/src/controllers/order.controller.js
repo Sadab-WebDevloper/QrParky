@@ -8,9 +8,9 @@ const logger = require('../utils/logger');
 const config = require('../config/env');
 
 const VEHICLE_PRICES_PAISE = {
-  '2wheeler': 49900,  // ₹499
-  '4wheeler': 49900,  // ₹499
-  'other': 49900,     // ₹499
+  '2wheeler': 29900,  // ₹299
+  '4wheeler': 29900,  // ₹299
+  'other': 29900,     // ₹299
 };
 
 /**
@@ -202,7 +202,8 @@ const handlePaymentWebhook = async (req, res, next) => {
         };
 
         const encryptedToken = encryptPayload(qrPayloadObj);
-        const qrImageDataUrl = await generateQRDataUrl(encryptedToken);
+        const verificationUrl = `${config.frontendUrl}/pass/verify/${encryptedToken}`;
+        const qrImageDataUrl = await generateQRDataUrl(verificationUrl);
 
         // Upsert QR record (1 QR code per approved + paid vehicle)
         const [qrRecord, created] = await QRCode.findOrCreate({
