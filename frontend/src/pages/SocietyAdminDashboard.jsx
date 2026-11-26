@@ -27,9 +27,20 @@ import {
   Sparkles,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
+  Filter,
+  Check,
+  MapPin,
+  Calendar,
   ExternalLink,
   BellRing,
-  X
+  X,
+  Clock,
+  CreditCard,
+  Layers,
+  ShieldCheck,
+  PauseCircle,
+  PlayCircle
 } from 'lucide-react';
 
 export default function SocietyAdminDashboard() {
@@ -45,12 +56,23 @@ export default function SocietyAdminDashboard() {
   const [activeTab, setActiveTab] = useState('vehicles');
 
   // Vehicle filters
-  const [vehicleFilter, setVehicleFilter] = useState('all'); // 'all', 'pending', 'active'
+  const [vehicleFilter, setVehicleFilter] = useState('all'); // 'all', 'pending', 'awaiting_payment', 'active'
   const [vehicleSearch, setVehicleSearch] = useState('');
 
   // Member filters
   const [memberFilter, setMemberFilter] = useState('all'); // 'all', 'pending', 'approved', 'suspended'
   const [memberSearch, setMemberSearch] = useState('');
+
+  // Dropdown states for custom filters
+  const [vehicleDropdownOpen, setVehicleDropdownOpen] = useState(false);
+  const [memberDropdownOpen, setMemberDropdownOpen] = useState(false);
+  const vehicleDropdownRef = useRef(null);
+  const memberDropdownRef = useRef(null);
+
+  // Sliding indicator state & refs
+  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0, opacity: 0 });
+  const tabsContainerRef = useRef(null);
+  const tabRefs = useRef({});
 
   // Modals
   const [selectedMember, setSelectedMember] = useState(null);
@@ -94,28 +116,86 @@ export default function SocietyAdminDashboard() {
     }
   };
 
+  // Update sliding indicator on tab change & window resize
+  useEffect(() => {
+    const updateIndicator = () => {
+      const activeEl = tabRefs.current[activeTab];
+      if (activeEl && tabsContainerRef.current) {
+        setIndicatorStyle({
+          left: activeEl.offsetLeft,
+          width: activeEl.offsetWidth,
+          opacity: 1
+        });
+      }
+    };
+    updateIndicator();
+    const timer = setTimeout(updateIndicator, 40);
+    window.addEventListener('resize', updateIndicator);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateIndicator);
+    };
+  }, [activeTab, stats]);
+
+  // Close custom dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (vehicleDropdownRef.current && !vehicleDropdownRef.current.contains(e.target)) {
+        setVehicleDropdownOpen(false);
+      }
+      if (memberDropdownRef.current && !memberDropdownRef.current.contains(e.target)) {
+        setMemberDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [statsRes, membersRes, vehiclesRes, inviteRes, checkRes] = await Promise.all([
-        API.get('/society-admin/dashboard/stats'),
-        API.get('/society-admin/members?limit=100'),
-        API.get('/society-admin/vehicles'),
-        API.get('/society/me/invite-link'),
-        API.get('/society-admin/pending-check'),
-      ]);
+      // 1. Unified Fast Bootstrap: Try single consolidated endpoint first
+      const initRes = await API.get('/society-admin/dashboard/init').catch(() => null);
 
-      if (statsRes.data?.success) setStats(statsRes.data.data);
-      if (membersRes.data?.success) setMembers(membersRes.data.data || []);
-      if (vehiclesRes.data?.success) setVehicles(vehiclesRes.data.data || []);
-      if (inviteRes.data?.success) setInviteLink(inviteRes.data.data);
+      if (initRes && initRes.data?.success && initRes.data?.data) {
+        const { stats, members, vehicles, inviteLink, pendingCheck } = initRes.data.data;
+        setStats(stats);
+        setMembers(members || []);
+        setVehicles(vehicles || []);
+        setInviteLink(inviteLink);
 
-      if (checkRes.data?.success && checkRes.data?.data) {
-        lastSignatureRef.current = checkRes.data.data.syncSignature;
+        if (pendingCheck) {
+          lastSignatureRef.current = pendingCheck.syncSignature;
+          prevCountsRef.current = {
+            members: pendingCheck.pendingMembersCount || 0,
+            vehicles: pendingCheck.pendingVehiclesCount || 0,
+          };
+        }
+      } else {
+        // Fallback for older server deployments
+        const [statsRes, membersRes, vehiclesRes, inviteRes] = await Promise.all([
+          API.get('/society-admin/dashboard/stats'),
+          API.get('/society-admin/members?limit=100'),
+          API.get('/society-admin/vehicles'),
+          API.get('/society/me/invite-link'),
+        ]);
+
+        const loadedMembers = membersRes.data?.data || [];
+        const loadedVehicles = vehiclesRes.data?.data || [];
+
+        if (statsRes.data?.success) setStats(statsRes.data.data);
+        if (membersRes.data?.success) setMembers(loadedMembers);
+        if (vehiclesRes.data?.success) setVehicles(loadedVehicles);
+        if (inviteRes.data?.success) setInviteLink(inviteRes.data.data);
+
+        // Initialize sync signature directly from loaded data
+        const pendingMems = loadedMembers.filter(m => m.status === 'pending' && m.role !== 2);
+        const pendingVechs = loadedVehicles.filter(v => v.status === 'pending');
         prevCountsRef.current = {
-          members: checkRes.data.data.pendingMembersCount || 0,
-          vehicles: checkRes.data.data.pendingVehiclesCount || 0,
+          members: pendingMems.length,
+          vehicles: pendingVechs.length,
         };
+        lastSignatureRef.current = `${pendingMems.length}_${pendingVechs.length}_${pendingMems[0]?.id || 0}_${pendingVechs[0]?.id || 0}`;
       }
     } catch (err) {
       toast.error('Failed to load society admin dashboard data.');
@@ -132,9 +212,9 @@ export default function SocietyAdminDashboard() {
     }
 
     try {
-      // 2. Micro-check endpoint
-      const checkRes = await API.get('/society-admin/pending-check');
-      if (!checkRes.data?.success || !checkRes.data?.data) return;
+      // 2. Micro-check endpoint (safely caught in case live backend hasn't restarted yet)
+      const checkRes = await API.get('/society-admin/pending-check').catch(() => null);
+      if (!checkRes || !checkRes.data?.success || !checkRes.data?.data) return;
 
       const { pendingMembersCount, pendingVehiclesCount, latestMember, latestVehicle, syncSignature } = checkRes.data.data;
 
@@ -259,7 +339,7 @@ export default function SocietyAdminDashboard() {
     try {
       const res = await API.post(`/society-admin/vehicles/${id}/approve`, { passType });
       if (res.data?.success) {
-        toast.success(res.data?.message || 'Vehicle approved by Committee! Member can now pay ₹299 pass fee to activate.');
+        toast.success(res.data?.message || 'Vehicle approved by Committee! Member can now pay pass fee to activate.');
         fetchData();
       }
     } catch (err) {
@@ -278,15 +358,29 @@ export default function SocietyAdminDashboard() {
     });
   };
 
-  const handleOpenRevokeQR = (veh) => {
+  const handleOpenSuspendPass = (veh) => {
     setReasonModal({
       isOpen: true,
-      type: 'revoke_qr',
+      type: 'suspend_pass',
       targetId: veh.id,
       targetName: veh.vehicleNumber,
       reason: '',
       submitting: false
     });
+  };
+
+  const handleOpenRevokeQR = handleOpenSuspendPass;
+
+  const handleReactivatePass = async (veh) => {
+    try {
+      const res = await API.post(`/society-admin/vehicles/${veh.id}/reactivate`);
+      if (res.data?.success) {
+        toast.success(`Pass reactivated for ${veh.vehicleNumber}! Status is now Active.`);
+        fetchData();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reactivate pass.');
+    }
   };
 
   // Submit In-App Reason Modal
@@ -306,10 +400,10 @@ export default function SocietyAdminDashboard() {
           toast.success('Vehicle rejected.');
           fetchData();
         }
-      } else if (type === 'revoke_qr') {
-        const res = await API.post(`/admin/vehicles/${targetId}/qr/revoke`, { reason });
+      } else if (type === 'suspend_pass' || type === 'revoke_qr') {
+        const res = await API.post(`/society-admin/vehicles/${targetId}/suspend`, { reason });
         if (res.data?.success) {
-          toast.success('QR Pass revoked successfully.');
+          toast.success('Vehicle pass suspended. Resident has been notified with the reason.');
           fetchData();
         }
       } else if (type === 'reject_member') {
@@ -725,6 +819,7 @@ export default function SocietyAdminDashboard() {
       vehicleFilter === 'pending' ? v.status === 'pending' :
       vehicleFilter === 'awaiting_payment' ? v.status === 'awaiting_payment' :
       vehicleFilter === 'active' ? v.status === 'active' :
+      vehicleFilter === 'suspended' ? (v.status === 'suspended' || (v.status === 'expired' && v.qrCode)) :
       v.status === vehicleFilter;
 
     const query = vehicleSearch.toLowerCase().trim();
@@ -759,844 +854,1106 @@ export default function SocietyAdminDashboard() {
   const inviteUrl = inviteLink ? `${window.location.origin}/register/${inviteLink.inviteLinkToken}` : '';
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3">
       
-      {/* Dashboard Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Society Management</span>
+          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-widest mb-0.5">
+            <Building2 className="w-3 h-3" />
+            <span>Society Administration</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight">
-            Society Admin Portal
+          <h1 className="text-lg sm:text-xl font-extrabold text-zinc-900 dark:text-white tracking-tight leading-tight">
+            Society Admin Dashboard
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Approve resident vehicles, issue encrypted windshield QR passes, and manage resident permits.
-          </p>
         </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {/* <button
-            onClick={fetchData}
-            disabled={loading}
-            className="px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold border border-zinc-200 dark:border-zinc-700 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            title="Refresh dashboard data"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button> */}
-
-          {/* <button
-            onClick={() => setActiveTab('invite')}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs sm:text-sm hover:opacity-95 shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <LinkIcon className="w-3.5 h-3.5" />
-            <span>Invite Residents</span>
-          </button> */}
+        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold">
+          <Shield className="w-3.5 h-3.5" />
+          <span>{user?.societyName || 'Society Admin'}</span>
         </div>
       </div>
 
-      {/* In-App Live Notification Banner (Alerts Admin when resident applies in real-time) */}
+      {/* Live Notification Alert Banner */}
       {liveAlert && (
-        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/15 to-amber-500/10 border-2 border-amber-500/50 dark:border-amber-400/40 shadow-xl shadow-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-3 duration-300">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-zinc-950 flex items-center justify-center font-black shadow-md shrink-0">
-              <BellRing className="w-5 h-5 animate-bounce" />
+        <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-amber-500 text-zinc-950 flex items-center justify-center font-black shrink-0">
+              <BellRing className="w-3.5 h-3.5 animate-bounce" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500 text-zinc-950 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-zinc-950 animate-ping" />
-                  Live Notification
-                </span>
-                <span className="text-xs text-zinc-600 dark:text-zinc-400">Just now</span>
-              </div>
-              <h4 className="text-sm font-extrabold text-zinc-900 dark:text-white mt-0.5">
-                New Request: <span className="text-amber-600 dark:text-amber-400">{liveAlert.name}</span> applied for a vehicle pass {liveAlert.vehicleNumber && <span className="font-mono font-bold">({liveAlert.vehicleNumber})</span>}!
-              </h4>
+            <div className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="font-bold text-amber-600 dark:text-amber-400">{liveAlert.name}</span> applied for a vehicle pass {liveAlert.vehicleNumber && <span className="font-mono font-bold">({liveAlert.vehicleNumber})</span>}!
             </div>
           </div>
-
-          <div className="flex items-center gap-2 self-end sm:self-center">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
-              type="button"
               onClick={() => {
                 setActiveTab(liveAlert.targetTab);
                 if (liveAlert.targetTab === 'vehicles') setVehicleFilter('pending');
                 if (liveAlert.targetTab === 'members') setMemberFilter('pending');
                 setLiveAlert(null);
               }}
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs shadow-md transition flex items-center gap-1 cursor-pointer active:scale-95"
+              className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 cursor-pointer active:scale-95"
             >
-              <span>Review Now</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <span>Review</span>
+              <ChevronRight className="w-3 h-3" />
             </button>
             <button
-              type="button"
               onClick={() => setLiveAlert(null)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition"
-              title="Dismiss notification"
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       )}
 
-      {/* Overview Stat Cards (Consistent compact & balanced sizing) */}
+      {/* Stats Grid — Compact low-profile cards matching Super Admin */}
       {stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+          
+          {/* Residents Card */}
           <div 
             onClick={() => { setActiveTab('members'); setMemberFilter('all'); }}
-            className="glass-card p-3 sm:p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214] cursor-pointer hover:border-amber-400/50 transition"
+            className="p-2.5 sm:p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214] glass-card glass-card-hover transition-all duration-200 cursor-pointer"
           >
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Residents</span>
-              <Users className="w-3.5 h-3.5 text-amber-500" />
+              <div className="w-6.5 h-6.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+                <Users className="w-3.5 h-3.5" />
+              </div>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">{stats.members.total}</div>
-            <div className="text-[10px] font-semibold mt-0.5 flex items-center gap-1">
-              {stats.members.pending > 0 ? (
-                <span className="text-amber-600 dark:text-amber-400 font-bold">⚡ {stats.members.pending} Pending Review</span>
-              ) : (
-                <span className="text-emerald-600 dark:text-emerald-400">All Residents Verified</span>
-              )}
+            <div className="flex items-baseline justify-between mt-1">
+              <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight leading-none">
+                {stats.members.total}
+              </div>
+              <div className="text-[10px] font-semibold">
+                {stats.members.pending > 0 ? (
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span>{stats.members.pending} Pending</span>
+                  </span>
+                ) : (
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>All Verified</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
+          {/* Pending Vehicles Card */}
           <div 
             onClick={() => { setActiveTab('vehicles'); setVehicleFilter('pending'); }}
-            className={`glass-card p-3 sm:p-3.5 rounded-xl border cursor-pointer transition ${
+            className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-200 cursor-pointer glass-card glass-card-hover ${
               stats.vehicles.pending > 0 
-                ? 'border-yellow-400/60 dark:border-yellow-500/40 bg-yellow-50/20 dark:bg-yellow-950/20' 
-                : 'border-zinc-200 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214]'
+                ? 'border-yellow-400/70 dark:border-yellow-500/40 bg-yellow-50/25 dark:bg-yellow-950/20 shadow-sm' 
+                : 'border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214]'
             }`}
           >
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-yellow-700 dark:text-yellow-400 uppercase tracking-wider">Pending Vehicles</span>
-              <Car className="w-3.5 h-3.5 text-yellow-500" />
+              <div className="w-6.5 h-6.5 rounded-lg bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20 flex items-center justify-center shrink-0">
+                <Car className="w-3.5 h-3.5" />
+              </div>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">{stats.vehicles.pending}</div>
-            <div className="text-[10px] text-yellow-700 dark:text-yellow-400 font-semibold mt-0.5">
-              {stats.vehicles.pending > 0 ? 'Requires Admin Approval' : 'No pending vehicles'}
+            <div className="flex items-baseline justify-between mt-1">
+              <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight leading-none">
+                {stats.vehicles.pending}
+              </div>
+              <div className="text-[10px] font-semibold text-yellow-600 dark:text-yellow-400">
+                {stats.vehicles.pending > 0 ? 'Requires Review' : 'All Clear'}
+              </div>
             </div>
           </div>
 
+          {/* Active Passes Card */}
           <div 
             onClick={() => { setActiveTab('vehicles'); setVehicleFilter('active'); }}
-            className="glass-card p-3 sm:p-3.5 rounded-xl border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/10 cursor-pointer hover:border-emerald-400 transition"
+            className="p-2.5 sm:p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214] glass-card glass-card-hover transition-all duration-200 cursor-pointer"
           >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Active QR Passes</span>
-              <QrCode className="w-3.5 h-3.5 text-emerald-500" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Active Passes</span>
+              <div className="w-6.5 h-6.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                <QrCode className="w-3.5 h-3.5" />
+              </div>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">{stats.vehicles.active}</div>
-            <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">Issued for windshields</div>
+            <div className="flex items-baseline justify-between mt-1">
+              <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight leading-none">
+                {stats.vehicles.active}
+              </div>
+              <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+                Issued for windshields
+              </div>
+            </div>
           </div>
 
+          {/* Gate Security / Invite Link Card */}
           <div 
             onClick={() => setActiveTab('invite')}
-            className="glass-card p-3 sm:p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214] cursor-pointer hover:border-amber-400/50 transition"
+            className="p-2.5 sm:p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214] glass-card glass-card-hover transition-all duration-200 cursor-pointer"
           >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Gate Security</span>
-              <Shield className="w-3.5 h-3.5 text-amber-500" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Gate QR Access</span>
+              <div className="w-6.5 h-6.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+                <Shield className="w-3.5 h-3.5" />
+              </div>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">Active</div>
-            <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">Share QR join link</div>
+            <div className="flex items-center justify-between mt-1 min-h-[1.75rem] sm:min-h-[2rem]">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Active
+              </span>
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-0.5">
+                Print Poster →
+              </span>
+            </div>
           </div>
+
         </div>
       )}
 
-      {/* Main Consolidated Navigation Tabs (3 Tabs) */}
-      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3 mb-6 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('vehicles')}
-          className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === 'vehicles'
-              ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 shadow-md shadow-amber-500/20'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white bg-zinc-100 dark:bg-[#141416]'
-          }`}
+      {/* Tab Block: Nav + Pane together so spacing is fully controlled */}
+      <div className="flex flex-col gap-3">
+
+        {/* Tab Navigation: Mobile 3-Column Grid / Desktop Animated Sliding Segmented Bar */}
+        <div
+          ref={tabsContainerRef}
+          className="relative grid grid-cols-3 gap-1 sm:flex sm:items-center w-full p-1 rounded-xl bg-zinc-100/90 dark:bg-[#151518] border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm"
         >
-          <Car className="w-4 h-4" />
-          <span>Vehicle Passes</span>
-          {pendingVehicles.length > 0 && (
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 ${
-              activeTab === 'vehicles' ? 'bg-zinc-950 text-amber-400' : 'bg-yellow-500 text-zinc-950'
-            }`}>
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-600"></span>
-              </span>
-              <span>{pendingVehicles.length}</span>
-            </span>
-          )}
-        </button>
+          {/* Animated Sliding Pill (Desktop Only) */}
+          <div
+            className="hidden sm:block absolute top-1 bottom-1 rounded-lg bg-amber-500 shadow-sm transition-all duration-300 ease-out pointer-events-none"
+            style={{
+              transform: `translateX(${indicatorStyle.left}px)`,
+              width: `${indicatorStyle.width}px`,
+              opacity: indicatorStyle.opacity
+            }}
+          />
 
-        <button
-          onClick={() => setActiveTab('members')}
-          className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === 'members'
-              ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 shadow-md shadow-amber-500/20'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white bg-zinc-100 dark:bg-[#141416]'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Residents & Members</span>
-          {pendingMembers.length > 0 && (
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 ${
-              activeTab === 'members' ? 'bg-zinc-950 text-amber-400' : 'bg-yellow-500 text-zinc-950'
-            }`}>
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-600"></span>
-              </span>
-              <span>{pendingMembers.length}</span>
-            </span>
-          )}
-        </button>
+          {/* Tab 1: Vehicles */}
+          <button
+            ref={(el) => (tabRefs.current['vehicles'] = el)}
+            onClick={() => setActiveTab('vehicles')}
+            className={`relative z-10 sm:flex-1 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 min-w-0 ${
+              activeTab === 'vehicles'
+                ? 'bg-amber-500 text-zinc-950 font-black sm:bg-transparent shadow-sm sm:shadow-none'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <Car className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'vehicles' ? 'text-zinc-950' : 'text-zinc-400'}`} />
+            <span className="truncate sm:hidden">Passes</span>
+            <span className="hidden sm:inline">Vehicle Passes</span>
+            {pendingVehicles.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-amber-400 sm:bg-zinc-950 animate-pulse shrink-0" />
+            )}
+          </button>
 
-        <button
-          onClick={() => setActiveTab('invite')}
-          className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition flex items-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === 'invite'
-              ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 shadow-md shadow-amber-500/20'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white bg-zinc-100 dark:bg-[#141416]'
-          }`}
-        >
-          <LinkIcon className="w-4 h-4" />
-          <span>Member Invite</span>
-        </button>
-      </div>
+          {/* Tab 2: Members */}
+          <button
+            ref={(el) => (tabRefs.current['members'] = el)}
+            onClick={() => setActiveTab('members')}
+            className={`relative z-10 sm:flex-1 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 min-w-0 ${
+              activeTab === 'members'
+                ? 'bg-amber-500 text-zinc-950 font-black sm:bg-transparent shadow-sm sm:shadow-none'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <Users className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'members' ? 'text-zinc-950' : 'text-zinc-400'}`} />
+            <span className="truncate sm:hidden">Members</span>
+            <span className="hidden sm:inline">Residents & Members</span>
+            {pendingMembers.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-amber-400 sm:bg-zinc-950 animate-pulse shrink-0" />
+            )}
+          </button>
 
-      {/* ============================================================== */}
-      {/* TAB 1: VEHICLE PASSES & MANAGEMENT */}
-      {/* ============================================================== */}
-      {activeTab === 'vehicles' && (
-        <div className="space-y-4">
-          
-          {/* Controls: Search and Status Sub-filters */}
-          <div className="glass-card p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search vehicle number, resident name..."
-                value={vehicleSearch}
-                onChange={(e) => setVehicleSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition"
-              />
-            </div>
+          {/* Tab 3: Member Invite */}
+          <button
+            ref={(el) => (tabRefs.current['invite'] = el)}
+            onClick={() => setActiveTab('invite')}
+            className={`relative z-10 sm:flex-1 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 min-w-0 ${
+              activeTab === 'invite'
+                ? 'bg-amber-500 text-zinc-950 font-black sm:bg-transparent shadow-sm sm:shadow-none'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <LinkIcon className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'invite' ? 'text-zinc-950' : 'text-zinc-400'}`} />
+            <span className="truncate sm:hidden">Invite</span>
+            <span className="hidden sm:inline">Member Invite</span>
+          </button>
+        </div>
 
-            {/* Sub-filter pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              <button
-                onClick={() => setVehicleFilter('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                  vehicleFilter === 'all'
-                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                All ({vehicles.length})
-              </button>
-
-              <button
-                onClick={() => setVehicleFilter('pending')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  vehicleFilter === 'pending'
-                    ? 'bg-yellow-500 text-zinc-950 font-bold shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                <span>Pending Review</span>
-                {pendingVehicles.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
-                )}
-                <span>({pendingVehicles.length})</span>
-              </button>
-
-              <button
-                onClick={() => setVehicleFilter('awaiting_payment')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  vehicleFilter === 'awaiting_payment'
-                    ? 'bg-amber-500 text-zinc-950 font-bold shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                <span>Fee Pending (₹299)</span>
-                {awaitingPaymentVehicles.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                )}
-                <span>({awaitingPaymentVehicles.length})</span>
-              </button>
-
-              <button
-                onClick={() => setVehicleFilter('active')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                  vehicleFilter === 'active'
-                    ? 'bg-emerald-600 text-white font-bold shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                Active QR Passes ({activeVehicles.length})
-              </button>
-            </div>
-          </div>
-
-          {/* Vehicles List */}
-          {filteredVehicles.length === 0 ? (
-            <div className="p-12 text-center glass-card rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214] text-zinc-500 dark:text-zinc-400 text-sm">
-              <Car className="w-8 h-8 text-zinc-300 dark:text-zinc-600 mx-auto mb-2" />
-              No vehicles found matching the selected filter.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredVehicles.map((v) => {
-                const isPending = v.status === 'pending';
-                const isActive = v.status === 'active';
-
-                return (
-                  <div
-                    key={v.id}
-                    className="glass-card p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214] flex flex-col justify-between transition hover:border-zinc-300 dark:hover:border-zinc-700"
+        {/* Tab 1: Vehicle Passes Pane */}
+        {activeTab === 'vehicles' && (
+          <div key="tab-vehicles" className="animate-tab-pane glass-card rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214] relative z-10 shadow-sm flex flex-col overflow-visible">
+            
+            {/* Table Card Toolbar: Full Width Search & Status Filter */}
+            <div className="px-3.5 py-2 sm:px-4 sm:py-2.5 border-b border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/60 dark:bg-[#151518]/60 flex items-center justify-between gap-2.5 rounded-t-2xl overflow-visible">
+              <div className="relative flex-1 w-full">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search vehicle number, resident name, phone..."
+                  value={vehicleSearch}
+                  onChange={(e) => setVehicleSearch(e.target.value)}
+                  className="w-full h-8 pl-8 pr-8 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition shadow-xs"
+                />
+                {vehicleSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setVehicleSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                    title="Clear search"
                   >
-                    <div>
-                      {/* Top Bar: Plate Badge + Status */}
-                      <div className="flex items-center justify-between gap-3 mb-3">
-                        {/* Indian HSRP License Plate Mockup */}
-                        <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-400 dark:border-zinc-600 rounded-lg px-2.5 py-1 shadow-sm">
-                          <div className="flex flex-col items-center mr-2 border-r border-zinc-300 dark:border-zinc-700 pr-1.5">
-                            <span className="text-[7px] font-black text-blue-600 leading-none">IND</span>
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-0.5" />
-                          </div>
-                          <span className="font-mono font-black text-zinc-950 dark:text-amber-400 text-sm tracking-wider uppercase">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Custom Dropdown: Vehicle Status Filter */}
+              <div className="relative z-30 shrink-0" ref={vehicleDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setVehicleDropdownOpen(!vehicleDropdownOpen)}
+                  className="h-8 flex items-center justify-between gap-1.5 px-2.5 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:border-amber-400 dark:hover:border-amber-500/50 transition cursor-pointer shadow-xs"
+                >
+                  <div className="flex items-center gap-1">
+                    <Filter className="w-3 h-3 text-amber-500 shrink-0" />
+                    <span className="text-zinc-400 text-[11px]">Status:</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400 capitalize text-xs">
+                      {vehicleFilter === 'all' ? 'All' :
+                       vehicleFilter === 'pending' ? 'Pending' :
+                       vehicleFilter === 'awaiting_payment' ? 'Fee Pending' :
+                       vehicleFilter === 'suspended' ? 'Suspended' :
+                       'Active Passes'}
+                    </span>
+                  </div>
+                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${vehicleDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {vehicleDropdownOpen && (
+                  <div className="absolute right-0 mt-1.5 w-44 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 shadow-2xl p-1 z-40 animate-dropdown">
+                    {[
+                      { value: 'all', label: 'All Vehicles' },
+                      { value: 'active', label: 'Active Passes' },
+                      { value: 'suspended', label: 'Suspended Passes' },
+                      { value: 'pending', label: 'Pending Review' },
+                      { value: 'awaiting_payment', label: 'Fee Pending' },
+                    ].map((opt) => {
+                      const isSelected = vehicleFilter === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setVehicleFilter(opt.value);
+                            setVehicleDropdownOpen(false);
+                          }}
+                          className={`w-full px-2.5 py-1.5 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold'
+                              : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-amber-600 dark:hover:text-amber-400'
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isSelected && <Check className="w-3 h-3 text-amber-500 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-zinc-700 dark:text-zinc-300">
+                <thead className="bg-zinc-50/80 dark:bg-[#161619] text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-200/80 dark:border-zinc-800/80">
+                  <tr>
+                    <th className="px-4 py-2">Vehicle</th>
+                    <th className="px-4 py-2">Resident / Owner</th>
+                    <th className="px-4 py-2">RC Document</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                {loading ? (
+                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
+                    {Array.from({ length: 4 }).map((_, rIdx) => (
+                      <tr key={rIdx}>
+                        {Array.from({ length: 5 }).map((_, cIdx) => (
+                          <td key={cIdx} className="px-4 py-2">
+                            <div className="h-3.5 bg-zinc-200/70 dark:bg-zinc-800/80 rounded-md animate-pulse" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                ) : filteredVehicles.length === 0 ? (
+                  <tbody>
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                        <Car className="w-6 h-6 text-zinc-300 dark:text-zinc-600 mx-auto mb-1.5" />
+                        No vehicles found matching the selected filter.
+                      </td>
+                    </tr>
+                  </tbody>
+                ) : (
+                  <tbody className="divide-y divide-zinc-200/70 dark:divide-zinc-800/60">
+                    {filteredVehicles.map((v) => {
+                      const isPending = v.status === 'pending';
+                      const isActive = v.status === 'active';
+                      const isSuspended = v.status === 'suspended' || (v.status === 'expired' && v.qrCode);
+
+                      return (
+                        <tr key={v.id} className="hover:bg-zinc-50/80 dark:hover:bg-[#18181b]/50 transition-colors">
+                          {/* Plate & Type */}
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md px-2 py-0.5 shadow-2xs">
+                                <span className="text-[7px] font-black text-blue-600 mr-1">IND</span>
+                                <span className="font-mono font-black text-zinc-950 dark:text-amber-400 text-xs uppercase tracking-wider">
+                                  {v.vehicleNumber}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 capitalize flex items-center gap-0.5">
+                                {v.vehicleType === '2wheeler' ? <Bike className="w-3 h-3 text-amber-500" /> : <Car className="w-3 h-3 text-amber-500" />}
+                                {v.vehicleType}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Resident Info */}
+                          <td className="px-4 py-2">
+                            <div className="font-semibold text-zinc-900 dark:text-zinc-200 text-xs">
+                              {v.owner?.name || 'Resident'}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 font-mono">
+                              {v.owner?.phone || v.owner?.email || '—'}
+                            </div>
+                          </td>
+
+                          {/* RC Document */}
+                          <td className="px-4 py-2 text-xs">
+                            {v.documents && v.documents.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDocument(v.documents[0])}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 hover:text-amber-500 text-[11px] font-semibold transition cursor-pointer"
+                              >
+                                <FileText className="w-3 h-3 text-amber-500" />
+                                <span>View RC</span>
+                              </button>
+                            ) : (
+                              <span className="text-zinc-400 italic text-[11px]">No doc</span>
+                            )}
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-4 py-2">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                              isActive
+                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                : isSuspended
+                                ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                                : v.status === 'awaiting_payment'
+                                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                                : isPending
+                                ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
+                            }`}
+                            title={isSuspended && v.suspensionReason ? `Reason: ${v.suspensionReason}` : undefined}
+                            >
+                              {isActive ? '● Active Pass' :
+                               isSuspended ? '⏸ Suspended' :
+                               v.status === 'awaiting_payment' ? '🟡 Fee Pending' :
+                               isPending ? 'Pending Review' : v.status}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-4 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {isPending && (
+                                <>
+                                  <button
+                                    onClick={() => handleApproveVehicle(v.id, 'regular')}
+                                    className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                                  >
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Approve</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenRejectVehicle(v)}
+                                    className="h-7 px-2 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 hover:bg-rose-100 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                                  >
+                                    <XCircle className="w-3 h-3" />
+                                    <span>Reject</span>
+                                  </button>
+                                </>
+                              )}
+
+                              {isActive && (
+                                <>
+                                  <button
+                                    onClick={() => handleViewQR(v.id)}
+                                    className="h-7 px-2.5 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-[11px] hover:opacity-95 shadow-sm transition flex items-center gap-1 cursor-pointer active:scale-95"
+                                  >
+                                    <QrCode className="w-3 h-3" />
+                                    <span>QR Pass</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenSuspendPass(v)}
+                                    className="h-7 px-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-600/40 hover:bg-amber-500/20 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                                    title="Temporarily hold/pause this vehicle's pass"
+                                  >
+                                    <PauseCircle className="w-3 h-3 text-amber-500" />
+                                    <span>Suspend Pass</span>
+                                  </button>
+                                </>
+                              )}
+
+                              {isSuspended && (
+                                <>
+                                  <button
+                                    onClick={() => handleViewQR(v.id)}
+                                    className="h-7 px-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-semibold hover:bg-zinc-200 transition flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <QrCode className="w-3 h-3" />
+                                    <span>View</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleReactivatePass(v)}
+                                    className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                                    title="Restore pass access back to Active"
+                                  >
+                                    <PlayCircle className="w-3 h-3" />
+                                    <span>Reactivate Pass</span>
+                                  </button>
+                                </>
+                              )}
+
+                              {v.status === 'awaiting_payment' && v.owner?.phone && (
+                                <a
+                                  href={`https://api.whatsapp.com/send?phone=${encodeURIComponent(v.owner.phone)}&text=${encodeURIComponent(
+                                    `Hello ${v.owner.name},\n\nYour vehicle registration (${v.vehicleNumber}) has been verified & approved by the committee! Please sign in to QrParky to complete the ${v.vehicleType === '2wheeler' ? '₹199' : '₹299'} pass fee and download your windshield QR pass.\n\nThank you,\n${user?.societyName || 'Society Committee'}`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer transition shadow-sm"
+                                  title="Remind member on WhatsApp"
+                                >
+                                  <Share2 className="w-3 h-3" />
+                                  <span>Remind</span>
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                )}
+              </table>
+            </div>
+
+            {/* Mobile Box/Card View */}
+            <div className="sm:hidden p-2.5 space-y-2.5">
+              {filteredVehicles.length === 0 ? (
+                <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                  <Car className="w-6 h-6 text-zinc-300 dark:text-zinc-600 mx-auto mb-1.5" />
+                  No vehicles found.
+                </div>
+              ) : (
+                filteredVehicles.map((v) => {
+                  const isPending = v.status === 'pending';
+                  const isActive = v.status === 'active';
+                  const isSuspended = v.status === 'suspended' || (v.status === 'expired' && v.qrCode);
+
+                  return (
+                    <div
+                      key={v.id}
+                      className="p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#141416] shadow-sm space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md px-2 py-0.5 shadow-2xs">
+                          <span className="text-[7px] font-black text-blue-600 mr-1">IND</span>
+                          <span className="font-mono font-black text-zinc-950 dark:text-amber-400 text-xs uppercase tracking-wider">
                             {v.vehicleNumber}
                           </span>
                         </div>
-
-                        {/* Status Tag */}
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
                           isActive
-                            ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/60'
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                            : isSuspended
+                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
                             : v.status === 'awaiting_payment'
-                            ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800/60'
+                            ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
                             : isPending
-                            ? 'bg-yellow-100 dark:bg-yellow-950/80 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800/60'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
+                            ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
                         }`}>
-                          {v.status === 'active' ? '● Active Pass' :
-                           v.status === 'awaiting_payment' ? '🟡 Fee Pending (₹299)' :
-                           v.status === 'pending' ? 'Pending Review' : v.status}
+                          {isActive ? '● Active Pass' :
+                           isSuspended ? '⏸ Suspended' :
+                           v.status === 'awaiting_payment' ? '🟡 Fee Pending' :
+                           isPending ? 'Pending' : v.status}
                         </span>
                       </div>
 
-                      {/* Vehicle & Owner Details */}
-                      <div className="grid grid-cols-2 gap-2 text-xs py-2 border-y border-zinc-100 dark:border-zinc-800/80 mb-3">
-                        <div>
-                          <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-0.5">Vehicle Type</span>
-                          <span className="font-semibold text-zinc-800 dark:text-zinc-200 capitalize flex items-center gap-1">
-                            {v.vehicleType === '2wheeler' ? <Bike className="w-3.5 h-3.5 text-amber-500" /> : <Car className="w-3.5 h-3.5 text-amber-500" />}
-                            {v.vehicleType}
-                          </span>
+                      {isSuspended && v.suspensionReason && (
+                        <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-[10px] text-rose-700 dark:text-rose-300">
+                          <strong>Suspended:</strong> {v.suspensionReason}
                         </div>
+                      )}
 
+                      <div className="grid grid-cols-2 gap-2 text-[11px] py-1.5 border-y border-zinc-100 dark:border-zinc-800/80">
                         <div>
-                          <span className="text-[10px] text-zinc-400 uppercase font-bold block mb-0.5">Resident / Owner</span>
-                          <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate block">
+                          <span className="text-[9px] text-zinc-400 uppercase font-bold tracking-wider block">Resident</span>
+                          <span className="font-semibold text-zinc-900 dark:text-zinc-200 truncate block">
                             {v.owner?.name || 'Resident'}
                           </span>
-                          <span className="text-[11px] text-zinc-400 block font-mono">
+                          <span className="text-[10px] text-zinc-500 font-mono block">
                             {v.owner?.phone || v.owner?.email || '—'}
                           </span>
                         </div>
+                        <div>
+                          <span className="text-[9px] text-zinc-400 uppercase font-bold tracking-wider block">Vehicle Type</span>
+                          <span className="font-semibold text-zinc-800 dark:text-zinc-200 capitalize flex items-center gap-1">
+                            {v.vehicleType === '2wheeler' ? <Bike className="w-3 h-3 text-amber-500" /> : <Car className="w-3 h-3 text-amber-500" />}
+                            {v.vehicleType}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* RC Document Preview Button if exists */}
                       {v.documents && v.documents.length > 0 && (
-                        <div className="mb-3">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDocument(v.documents[0])}
-                            className="w-full py-1.5 px-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-amber-500 dark:hover:text-amber-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-amber-500" />
-                            <span>View Registration Certificate (RC)</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions Row */}
-                    <div className="pt-2 flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                      {isPending && (
-                        <>
-                          <button
-                            onClick={() => handleApproveVehicle(v.id, 'regular')}
-                            className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Approve Pass</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenRejectVehicle(v)}
-                            className="py-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40 hover:bg-rose-100 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Reject</span>
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDocument(v.documents[0])}
+                          className="w-full py-1.5 px-2.5 rounded-lg bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 text-[11px] font-semibold flex items-center justify-center gap-1"
+                        >
+                          <FileText className="w-3 h-3 text-amber-500" />
+                          <span>View Registration Certificate (RC)</span>
+                        </button>
                       )}
 
-                      {isActive && (
-                        <>
-                          <button
-                            onClick={() => handleViewQR(v.id)}
-                            className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs hover:opacity-95 shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <QrCode className="w-3.5 h-3.5" />
-                            <span>View QR Pass</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenRevokeQR(v)}
-                            className="py-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/40 hover:bg-rose-100 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                            title="Revoke QR pass for lost/sold vehicle"
-                          >
-                            <ShieldAlert className="w-3.5 h-3.5" />
-                            <span>Revoke</span>
-                          </button>
-                        </>
-                      )}
-
-                      {v.status === 'awaiting_payment' && (
-                        <div className="flex-1 flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-xl">
-                            🟡 Approved by Admin • Awaiting Member Payment (₹299)
-                          </span>
-                          {v.owner?.phone && (
-                            <a
-                              href={`https://api.whatsapp.com/send?phone=${encodeURIComponent(v.owner.phone)}&text=${encodeURIComponent(
-                                `Hello ${v.owner.name},\n\nYour vehicle registration (${v.vehicleNumber}) has been verified & approved by the committee! Please sign in to QrParky to complete the ₹299 sticker fee and download your windshield QR pass.\n\nThank you,\n${user?.societyName || 'Society Committee'}`
-                              )}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer transition shrink-0 shadow-sm"
-                              title="Remind member on WhatsApp"
+                      {/* Action buttons */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        {isPending && (
+                          <>
+                            <button
+                              onClick={() => handleApproveVehicle(v.id, 'regular')}
+                              className="h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer shadow-sm active:scale-95"
                             >
-                              <Share2 className="w-3.5 h-3.5" />
-                              <span>Remind Resident</span>
-                            </a>
-                          )}
-                        </div>
-                      )}
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Approve</span>
+                            </button>
+                            <button
+                              onClick={() => handleOpenRejectVehicle(v)}
+                              className="h-8 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                            >
+                              <XCircle className="w-3 h-3" />
+                              <span>Reject</span>
+                            </button>
+                          </>
+                        )}
 
-                      {!isPending && !isActive && v.status !== 'awaiting_payment' && (
-                        <span className="text-zinc-400 text-xs italic">
-                          Status: {v.status}
-                        </span>
-                      )}
+                        {isActive && (
+                          <>
+                            <button
+                              onClick={() => handleViewQR(v.id)}
+                              className="h-8 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                            >
+                              <QrCode className="w-3 h-3" />
+                              <span>View QR</span>
+                            </button>
+                            <button
+                              onClick={() => handleOpenSuspendPass(v)}
+                              className="h-8 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-600/40 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                            >
+                              <PauseCircle className="w-3 h-3 text-amber-500" />
+                              <span>Suspend Pass</span>
+                            </button>
+                          </>
+                        )}
+
+                        {isSuspended && (
+                          <>
+                            <button
+                              onClick={() => handleViewQR(v.id)}
+                              className="h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <QrCode className="w-3 h-3" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              onClick={() => handleReactivatePass(v)}
+                              className="h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                            >
+                              <PlayCircle className="w-3 h-3" />
+                              <span>Reactivate Pass</span>
+                            </button>
+                          </>
+                        )}
+
+                        {v.status === 'awaiting_payment' && v.owner?.phone && (
+                          <a
+                            href={`https://api.whatsapp.com/send?phone=${encodeURIComponent(v.owner.phone)}&text=${encodeURIComponent(
+                              `Hello ${v.owner.name},\n\nYour vehicle registration (${v.vehicleNumber}) has been verified & approved by the committee! Please sign in to QrParky to complete the ${v.vehicleType === '2wheeler' ? '₹199' : '₹299'} pass fee and download your windshield QR pass.\n\nThank you,\n${user?.societyName || 'Society Committee'}`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="col-span-2 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Share2 className="w-3 h-3" />
+                            <span>Remind Resident via WhatsApp</span>
+                          </a>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* TAB 2: RESIDENTS & MEMBERS */}
-      {/* ============================================================== */}
-      {activeTab === 'members' && (
-        <div className="space-y-4">
-          
-          {/* Controls: Search and Member status filter */}
-          <div className="glass-card p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search resident name, email, phone..."
-                value={memberSearch}
-                onChange={(e) => setMemberSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition"
-              />
+                  );
+                })
+              )}
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              <button
-                onClick={() => setMemberFilter('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                  memberFilter === 'all'
-                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                All Residents ({members.filter(m => m.role !== 2).length})
-              </button>
-
-              <button
-                onClick={() => setMemberFilter('pending')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  memberFilter === 'pending'
-                    ? 'bg-yellow-500 text-zinc-950 font-bold shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                <span>Pending Approval</span>
-                {pendingMembers.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
-                )}
-                <span>({pendingMembers.length})</span>
-              </button>
-
-              <button
-                onClick={() => setMemberFilter('approved')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                  memberFilter === 'approved'
-                    ? 'bg-emerald-600 text-white font-bold shadow-sm'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                }`}
-              >
-                Approved ({members.filter(m => m.status === 'approved' && m.role !== 2).length})
-              </button>
-            </div>
           </div>
+        )}
 
-          {/* Members Table / Mobile Cards */}
-          <div className="glass-card rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden bg-white/90 dark:bg-[#121214]">
-            {filteredMembers.length === 0 ? (
-              <div className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-sm">
-                No resident members found matching your search.
+        {/* Tab 2: Residents & Members Pane */}
+        {activeTab === 'members' && (
+          <div key="tab-members" className="animate-tab-pane glass-card rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214] relative z-10 shadow-sm flex flex-col overflow-visible">
+            
+            {/* Table Card Toolbar: Full Width Search & Status Filter */}
+            <div className="px-3.5 py-2 sm:px-4 sm:py-2.5 border-b border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/60 dark:bg-[#151518]/60 flex items-center justify-between gap-2.5 rounded-t-2xl overflow-visible">
+              <div className="relative flex-1 w-full">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search resident name, email, phone..."
+                  value={memberSearch}
+                  onChange={(e) => setMemberSearch(e.target.value)}
+                  className="w-full h-8 pl-8 pr-8 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition shadow-xs"
+                />
+                {memberSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setMemberSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-            ) : (
-              <>
-                {/* Desktop Table View */}
-                <div className="hidden sm:block overflow-x-auto">
-                  <table className="w-full text-left text-sm text-zinc-700 dark:text-zinc-300">
-                    <thead className="bg-zinc-100 dark:bg-[#18181b] text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase border-b border-zinc-200 dark:border-zinc-800">
-                      <tr>
-                        <th className="px-6 py-4">Resident</th>
-                        <th className="px-6 py-4">Contact</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Vehicles</th>
-                        <th className="px-6 py-4">Joined</th>
-                        <th className="px-6 py-4 text-right">Actions</th>
+
+              {/* Custom Dropdown: Member Status Filter */}
+              <div className="relative z-30 shrink-0" ref={memberDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setMemberDropdownOpen(!memberDropdownOpen)}
+                  className="h-8 flex items-center justify-between gap-1.5 px-2.5 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:border-amber-400 dark:hover:border-amber-500/50 transition cursor-pointer shadow-xs"
+                >
+                  <div className="flex items-center gap-1">
+                    <Filter className="w-3 h-3 text-amber-500 shrink-0" />
+                    <span className="text-zinc-400 text-[11px]">Status:</span>
+                    <span className="font-bold text-amber-600 dark:text-amber-400 capitalize text-xs">
+                      {memberFilter === 'all' ? 'All' :
+                       memberFilter === 'pending' ? 'Pending' :
+                       memberFilter === 'approved' ? 'Approved' :
+                       'Suspended'}
+                    </span>
+                  </div>
+                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${memberDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {memberDropdownOpen && (
+                  <div className="absolute right-0 mt-1.5 w-44 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 shadow-2xl p-1 z-40 animate-dropdown">
+                    {[
+                      { value: 'all', label: 'All Residents' },
+                      { value: 'pending', label: 'Pending Approval' },
+                      { value: 'approved', label: 'Approved' },
+                      { value: 'suspended', label: 'Suspended' },
+                    ].map((opt) => {
+                      const isSelected = memberFilter === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setMemberFilter(opt.value);
+                            setMemberDropdownOpen(false);
+                          }}
+                          className={`w-full px-2.5 py-1.5 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold'
+                              : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-amber-600 dark:hover:text-amber-400'
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          {isSelected && <Check className="w-3 h-3 text-amber-500 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-zinc-700 dark:text-zinc-300">
+                <thead className="bg-zinc-50/80 dark:bg-[#161619] text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-200/80 dark:border-zinc-800/80">
+                  <tr>
+                    <th className="px-4 py-2">Resident</th>
+                    <th className="px-4 py-2">Contact</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2">Vehicles</th>
+                    <th className="px-4 py-2">Joined</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                {loading ? (
+                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
+                    {Array.from({ length: 4 }).map((_, rIdx) => (
+                      <tr key={rIdx}>
+                        {Array.from({ length: 6 }).map((_, cIdx) => (
+                          <td key={cIdx} className="px-4 py-2">
+                            <div className="h-3.5 bg-zinc-200/70 dark:bg-zinc-800/80 rounded-md animate-pulse" />
+                          </td>
+                        ))}
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
-                      {filteredMembers.map((m) => {
-                        const isPending = m.status === 'pending';
+                    ))}
+                  </tbody>
+                ) : filteredMembers.length === 0 ? (
+                  <tbody>
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                        <Users className="w-6 h-6 text-zinc-300 dark:text-zinc-600 mx-auto mb-1.5" />
+                        No resident members found matching your search.
+                      </td>
+                    </tr>
+                  </tbody>
+                ) : (
+                  <tbody className="divide-y divide-zinc-200/70 dark:divide-zinc-800/60">
+                    {filteredMembers.map((m) => {
+                      const isPending = m.status === 'pending';
 
-                        return (
-                          <tr key={m.id} className="hover:bg-zinc-50 dark:hover:bg-[#18181b]/50 transition">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
-                                  {m.name?.charAt(0).toUpperCase()}
-                                </div>
-                                <div>
-                                  <div className="font-bold text-zinc-900 dark:text-white text-sm">{m.name}</div>
-                                  <div className="text-[11px] text-zinc-500">ID: #{m.id}</div>
-                                </div>
+                      return (
+                        <tr key={m.id} className="hover:bg-zinc-50/80 dark:hover:bg-[#18181b]/50 transition-colors">
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
+                                {m.name?.charAt(0).toUpperCase()}
                               </div>
-                            </td>
-
-                            <td className="px-6 py-4 text-xs">
-                              <div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
-                                <Mail className="w-3.5 h-3.5 text-zinc-400" />
-                                <span>{m.email}</span>
+                              <div>
+                                <div className="font-extrabold text-zinc-900 dark:text-white text-xs">{m.name}</div>
+                                <div className="text-[10px] text-zinc-400">ID: #{m.id}</div>
                               </div>
-                              <div className="flex items-center gap-1.5 text-zinc-500 mt-0.5 font-mono">
-                                <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                                <span>{m.phone || '—'}</span>
-                              </div>
-                            </td>
-
-                            <td className="px-6 py-4">
-                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                m.status === 'approved'
-                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                                  : isPending
-                                  ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800'
-                                  : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
-                              }`}>
-                                {m.status}
-                              </span>
-                            </td>
-
-                            <td className="px-6 py-4 text-xs">
-                              {m.vehicles && m.vehicles.length > 0 ? (
-                                <span className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-800/40">
-                                  🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
-                                </span>
-                              ) : (
-                                <span className="text-zinc-400 dark:text-zinc-500 italic text-xs">None</span>
-                              )}
-                            </td>
-
-                            <td className="px-6 py-4 text-xs text-zinc-500 dark:text-zinc-400">
-                              {new Date(m.createdAt).toLocaleDateString()}
-                            </td>
-
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => setSelectedMember(m)}
-                                  className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-amber-500" />
-                                  <span>Details</span>
-                                </button>
-
-                                {isPending && (
-                                  <button
-                                    onClick={() => handleApproveMember(m.id)}
-                                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>Approve</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile Box/Card View */}
-                <div className="sm:hidden space-y-3 p-3">
-                  {filteredMembers.map((m) => {
-                    const isPending = m.status === 'pending';
-                    return (
-                      <div
-                        key={m.id}
-                        className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-[#141416] shadow-sm space-y-3"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
-                              {m.name?.charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                              <div className="font-bold text-zinc-900 dark:text-white text-sm">{m.name}</div>
-                              <div className="text-[11px] text-zinc-500">ID: #{m.id}</div>
-                            </div>
-                          </div>
+                          </td>
 
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 ${
-                            m.status === 'approved'
-                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800'
-                              : isPending
-                              ? 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800'
-                              : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
-                          }`}>
-                            {m.status}
-                          </span>
-                        </div>
+                          <td className="px-4 py-2 text-xs">
+                            <div className="font-semibold text-zinc-800 dark:text-zinc-200 text-xs">{m.email}</div>
+                            <div className="text-zinc-500 text-[10px] font-mono">{m.phone || '—'}</div>
+                          </td>
 
-                        <div className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-100 dark:border-zinc-800 text-xs space-y-1">
-                          <div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
-                            <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span className="truncate">{m.email}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-zinc-500 font-mono">
-                            <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span>{m.phone || '—'}</span>
-                          </div>
-                        </div>
+                          <td className="px-4 py-2">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                              m.status === 'approved'
+                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                : isPending
+                                ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                                : 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                            }`}>
+                              {m.status}
+                            </span>
+                          </td>
 
-                        <div className="flex items-center justify-between text-xs py-1">
-                          <div>
+                          <td className="px-4 py-2 text-xs">
                             {m.vehicles && m.vehicles.length > 0 ? (
-                              <span className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-800/40 text-[11px]">
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold border border-amber-500/20 text-[11px]">
                                 🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
                               </span>
                             ) : (
-                              <span className="text-zinc-400 dark:text-zinc-500 italic text-[11px]">No vehicles</span>
+                              <span className="text-zinc-400 italic text-[11px]">None</span>
                             )}
+                          </td>
+
+                          <td className="px-4 py-2 text-[11px] text-zinc-500 whitespace-nowrap">
+                            {new Date(m.createdAt).toLocaleDateString()}
+                          </td>
+
+                          <td className="px-4 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => setSelectedMember(m)}
+                                className="h-7 px-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye className="w-3 h-3 text-amber-500" />
+                                <span>Details</span>
+                              </button>
+
+                              {isPending && (
+                                <button
+                                  onClick={() => handleApproveMember(m.id)}
+                                  className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Approve</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                )}
+              </table>
+            </div>
+
+            {/* Mobile Box/Card View */}
+            <div className="sm:hidden p-2.5 space-y-2.5">
+              {filteredMembers.length === 0 ? (
+                <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                  <Users className="w-6 h-6 text-zinc-300 dark:text-zinc-600 mx-auto mb-1.5" />
+                  No residents found.
+                </div>
+              ) : (
+                filteredMembers.map((m) => {
+                  const isPending = m.status === 'pending';
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#141416] shadow-sm space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
+                            {m.name?.charAt(0).toUpperCase()}
                           </div>
-                          <div className="text-[11px] text-zinc-400">
-                            Joined: {new Date(m.createdAt).toLocaleDateString()}
+                          <div>
+                            <div className="font-extrabold text-zinc-900 dark:text-white text-xs">{m.name}</div>
+                            <div className="text-[10px] text-zinc-400">ID: #{m.id}</div>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800/80">
-                          <button
-                            onClick={() => setSelectedMember(m)}
-                            className="py-2 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-amber-500" />
-                            <span>Details</span>
-                          </button>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                          m.status === 'approved'
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                            : isPending
+                            ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                            : 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                        }`}>
+                          {m.status}
+                        </span>
+                      </div>
 
-                          {isPending ? (
-                            <button
-                              onClick={() => handleApproveMember(m.id)}
-                              className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Approve</span>
-                            </button>
-                          ) : (
-                            <div className="text-center py-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Approved</span>
-                            </div>
-                          )}
+                      <div className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-100 dark:border-zinc-800/80 text-[11px] space-y-0.5">
+                        <div className="flex items-center gap-1 text-zinc-800 dark:text-zinc-200">
+                          <Mail className="w-3 h-3 text-zinc-400 shrink-0" />
+                          <span className="truncate">{m.email}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-zinc-500 font-mono">
+                          <Phone className="w-3 h-3 text-zinc-400 shrink-0" />
+                          <span>{m.phone || '—'}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* ============================================================== */}
-      {/* TAB 3: INVITE LINK & SECURITY GATE POSTER */}
-      {/* ============================================================== */}
-      {activeTab === 'invite' && inviteLink && (
-        <div className="space-y-6 max-w-4xl mx-auto">
-          
-          {/* Section 1: Member Registration Invite Link */}
-          <div className="glass-card p-6 sm:p-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214]">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-                  <LinkIcon className="w-5 h-5" />
+                      <div className="flex items-center justify-between text-[11px]">
+                        <div>
+                          {m.vehicles && m.vehicles.length > 0 ? (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold border border-amber-500/20 text-[10px]">
+                              🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400 italic text-[10px]">No vehicles</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-zinc-400">
+                          Joined: {new Date(m.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-zinc-100 dark:border-zinc-800/80">
+                        <button
+                          onClick={() => setSelectedMember(m)}
+                          className="h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3 text-amber-500" />
+                          <span>Details</span>
+                        </button>
+
+                        {isPending ? (
+                          <button
+                            onClick={() => handleApproveMember(m.id)}
+                            className="h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Approve</span>
+                          </button>
+                        ) : (
+                          <div className="h-8 text-center text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Approved</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* Tab 3: Member Invite Pane */}
+        {activeTab === 'invite' && inviteLink && (
+          <div key="tab-invite" className="animate-tab-pane space-y-3">
+            
+            {/* Section 1: Member Registration Invite Link */}
+            <div className="glass-card p-3.5 sm:p-4 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214]">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                    <LinkIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-white">
+                      Member Registration Link
+                    </h2>
+                    {/* <p className="text-zinc-500 dark:text-zinc-400 text-[11px]">
+                      Share this unique onboarding link with society flat owners and tenants.
+                    </p> */}
+                  </div>
                 </div>
+
+                {/* <button
+                  onClick={handleRotateInviteToken}
+                  className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Invalidate current link and generate a fresh security token"
+                >
+                  <RefreshCw className="w-3 h-3" /> Rotate Security Link
+                </button> */}
+              </div>
+
+              {/* URL Input with Copy & WhatsApp actions */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-2.5">
+                <input
+                  type="text"
+                  readOnly
+                  value={inviteUrl}
+                  className="flex-1 bg-transparent text-xs font-mono text-amber-600 dark:text-amber-400 focus:outline-none truncate px-1"
+                />
+                
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={copyInviteLink}
+                    className="flex-1 sm:flex-none h-8 px-3 rounded-lg bg-gradient-to-r from-amber-400 to-yellow-500 text-zinc-950 text-xs font-bold hover:opacity-95 transition flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy Link</span>
+                  </button>
+
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                      `Dear Residents,\n\nPlease register your vehicles on the official QrParky portal for automated gate entry & encrypted windshield QR passes:\n\n👉 ${inviteUrl}\n\nThank you,\nSociety Committee`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 sm:flex-none h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>
+                  Active Link • Valid for 1 Year
+                  {inviteLink.inviteLinkExpiry && ` (Expires: ${new Date(inviteLink.inviteLinkExpiry).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })})`}
+                </span>
+              </div>
+            </div>
+
+            {/* Section 2: Printable Gate / Notice Board QR Poster */}
+            <div className="glass-card p-3.5 sm:p-4 rounded-xl border border-amber-300 dark:border-amber-500/30 bg-gradient-to-b from-white to-amber-50/20 dark:from-[#121214] dark:to-amber-950/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
                 <div>
-                  <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-white">
-                    Member Registration Link
-                  </h2>
-                  <p className="text-zinc-500 dark:text-zinc-400 text-xs">
-                    Share this unique onboarding link with society flat owners and tenants.
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-1.5">
+                    <Printer className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Printable Notice Board Poster</span>
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                    Hang this poster at the gate or notice board for on-the-spot resident registration.
                   </p>
                 </div>
-              </div>
 
-              <button
-                onClick={handleRotateInviteToken}
-                className="text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1.5 cursor-pointer shrink-0"
-                title="Invalidate current link and generate a fresh security token"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Rotate Security Link
-              </button>
-            </div>
-
-            {/* URL Input with Copy & WhatsApp actions */}
-            <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4">
-              <input
-                type="text"
-                readOnly
-                value={inviteUrl}
-                className="flex-1 bg-transparent text-xs font-mono text-amber-600 dark:text-amber-400 focus:outline-none truncate px-1"
-              />
-              
-              <div className="flex items-center gap-2">
                 <button
-                  onClick={copyInviteLink}
-                  className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-zinc-950 text-xs font-bold hover:opacity-95 transition flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
+                  type="button"
+                  onClick={handlePrintPoster}
+                  className="w-full sm:w-auto h-8 px-3.5 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 font-bold text-xs hover:opacity-90 transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                 >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Link</span>
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Poster</span>
                 </button>
-
-                <a
-                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-                    `Dear Residents,\n\nPlease register your vehicles on the official QrParky portal for automated gate entry & encrypted windshield QR passes:\n\n👉 ${inviteUrl}\n\nThank you,\nSociety Committee`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>Share via WhatsApp</span>
-                </a>
               </div>
-            </div>
 
-            <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Active permanent link (Safe to share on society WhatsApp groups)</span>
-            </div>
-          </div>
+              {/* Poster Preview Frame */}
+              <div className="p-4 rounded-xl bg-white border-2 border-dashed border-amber-400 max-w-xs mx-auto text-center shadow-md text-zinc-900 mb-8 sm:mb-2">
+                <div className="flex items-center justify-center gap-1.5 mb-1.5">
+                  <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-black text-[11px]">
+                    QP
+                  </div>
+                  <span className="font-extrabold text-sm tracking-tight text-zinc-900">QrParky Access</span>
+                </div>
 
-          {/* Section 2: Printable Gate / Notice Board QR Poster */}
-          <div className="glass-card p-6 sm:p-8 rounded-2xl border border-amber-300 dark:border-amber-500/30 bg-gradient-to-b from-white to-amber-50/20 dark:from-[#121214] dark:to-amber-950/10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                  <Printer className="w-4 h-4 text-amber-500" />
-                  <span>Printable Notice Board / Security Gate Poster</span>
-                </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Print and hang this poster at the main security cabin or notice board so incoming residents can scan and register on the spot.
+                {user?.societyName && (
+                  <div className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full inline-block mb-1.5">
+                    📍 {user.societyName}
+                  </div>
+                )}
+
+                <h4 className="text-xs font-extrabold text-zinc-900 uppercase tracking-wider mb-0.5">
+                  Resident Vehicle Registration
+                </h4>
+                <p className="text-[10px] text-zinc-600 mb-2.5 font-medium">
+                  Scan with phone camera to request windshield pass
                 </p>
-              </div>
 
-              <button
-                type="button"
-                onClick={handlePrintPoster}
-                className="px-4 py-2 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 font-bold text-xs hover:opacity-90 transition flex items-center gap-1.5 shadow-md cursor-pointer shrink-0"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Poster</span>
-              </button>
+                {/* QR Code image */}
+                <div className="p-2 bg-zinc-50 rounded-lg inline-block border border-zinc-200 shadow-inner mb-2.5">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(inviteUrl)}`}
+                    alt="Registration QR Code"
+                    className="w-32 h-32 rounded"
+                  />
+                </div>
+
+                <div className="text-[10px] text-zinc-600 bg-zinc-50 p-2.5 rounded-lg border border-zinc-200 text-left space-y-1">
+                  <div className="font-bold text-zinc-900 text-center mb-0.5 text-[11px]">3 Simple Steps:</div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="font-bold text-amber-600">1.</span>
+                    <span>Scan QR code with smartphone camera</span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="font-bold text-amber-600">2.</span>
+                    <span>Submit vehicle & flat owner details</span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="font-bold text-amber-600">3.</span>
+                    <span>Receive approved windshield pass</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Poster Preview Frame */}
-            <div className="p-6 rounded-2xl bg-white border-2 border-dashed border-amber-400 max-w-sm mx-auto text-center shadow-lg text-zinc-900">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-black text-xs">
-                  QP
-                </div>
-                <span className="font-extrabold text-base tracking-tight text-zinc-900">QrParky Access</span>
-              </div>
-
-              {user?.societyName && (
-                <div className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full inline-block mb-2">
-                  📍 {user.societyName}
-                </div>
-              )}
-
-              <h4 className="text-sm font-extrabold text-zinc-900 uppercase tracking-wider mb-1">
-                Resident Vehicle Registration
-              </h4>
-              <p className="text-[11px] text-zinc-600 mb-4 font-medium">
-                Scan with phone camera to request windshield QR Pass
-              </p>
-
-              {/* QR Code image for the invite registration URL */}
-              <div className="p-3 bg-zinc-50 rounded-xl inline-block border border-zinc-200 shadow-inner mb-4">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(inviteUrl)}`}
-                  alt="Registration QR Code"
-                  className="w-40 h-40 rounded"
-                />
-              </div>
-
-              <div className="text-[10px] text-zinc-500 space-y-1">
-                <div className="font-bold text-zinc-800">3 Simple Steps:</div>
-                <div>1. Scan QR with your smartphone camera</div>
-                <div>2. Fill flat number & vehicle plate details</div>
-                <div>3. Collect approved windshield pass from admin</div>
-              </div>
-            </div>
           </div>
+        )}
 
-        </div>
-      )}
+      </div>
 
       {/* ============================================================== */}
       {/* MODAL: Full Member Profile Details */}
@@ -1827,7 +2184,7 @@ export default function SocietyAdminDashboard() {
         onClose={() => setReasonModal(prev => ({ ...prev, isOpen: false }))}
         title={
           reasonModal.type === 'reject_vehicle' ? 'Reject Vehicle Registration' :
-          reasonModal.type === 'revoke_qr' ? 'Revoke QR Vehicle Pass' :
+          reasonModal.type === 'suspend_pass' || reasonModal.type === 'revoke_qr' ? 'Suspend Vehicle Pass (Temporary Hold)' :
           'Reject Member Registration'
         }
       >
@@ -1838,18 +2195,23 @@ export default function SocietyAdminDashboard() {
               <span>You are taking action on: </span>
               <strong className="font-mono">{reasonModal.targetName}</strong>.
               <span className="block text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
-                Please provide a clear reason so the resident understands the issue.
+                {reasonModal.type === 'suspend_pass' || reasonModal.type === 'revoke_qr'
+                  ? 'This temporarily pauses gate access for this vehicle. The resident will see this reason in their dashboard, and you can reactivate it at any time.'
+                  : 'Please provide a clear reason so the resident understands the issue.'}
               </span>
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              Reason / Explanation <span className="text-rose-500">*</span>
+              {reasonModal.type === 'suspend_pass' || reasonModal.type === 'revoke_qr' ? 'Reason for Suspension' : 'Reason / Explanation'} <span className="text-rose-500">*</span>
             </label>
             <textarea
               rows={3}
-              placeholder="e.g. Invalid RC document uploaded, Vehicle not allotted dedicated parking, Sold/transferred..."
+              placeholder={reasonModal.type === 'suspend_pass' || reasonModal.type === 'revoke_qr'
+                ? "e.g. Society maintenance dues pending for Q3, unauthorized parking slot, temporary rule violation..."
+                : "e.g. Invalid RC document uploaded, Vehicle not allotted dedicated parking, Sold/transferred..."
+              }
               value={reasonModal.reason}
               onChange={(e) => setReasonModal(prev => ({ ...prev, reason: e.target.value }))}
               className="w-full p-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition resize-none"
@@ -1868,9 +2230,13 @@ export default function SocietyAdminDashboard() {
               type="button"
               onClick={handleConfirmReasonModal}
               disabled={reasonModal.submitting}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
+              className={`px-4 py-2 rounded-xl font-bold text-xs shadow-md transition disabled:opacity-50 text-white ${
+                reasonModal.type === 'suspend_pass' || reasonModal.type === 'revoke_qr'
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-rose-600 hover:bg-rose-700'
+              }`}
             >
-              {reasonModal.submitting ? 'Processing...' : 'Confirm Action'}
+              {reasonModal.submitting ? 'Processing...' : (reasonModal.type === 'suspend_pass' || reasonModal.type === 'revoke_qr' ? 'Suspend Pass' : 'Confirm Action')}
             </button>
           </div>
         </div>

@@ -36,6 +36,13 @@ export default function HelpSupportModal({ isOpen, onClose }) {
     e.preventDefault();
     if (!formData.message.trim()) return;
 
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const contactVal = formData.emailOrPhone.trim();
+    if (contactVal && contactVal.includes('@') && !emailRegex.test(contactVal)) {
+      toast.error('Please enter a valid email address (e.g. user@domain.com).');
+      return;
+    }
+
     setSubmitting(true);
     try {
       // Send to backend API which triggers real SMTP email dispatch

@@ -34,7 +34,7 @@ const validateInviteToken = async (req, res, next) => {
 const registerMember = async (req, res, next) => {
   try {
     const { token } = req.params;
-    const { name, email, phone, password, vehicleNumber, vehicleType, documents } = req.body;
+    const { name, email, phone, password, vehicleNumber, vehicleName, vehicleType, documents, avatar } = req.body;
 
     const society = await Society.findOne({
       where: { inviteLinkToken: token, status: 'approved' },
@@ -79,6 +79,48 @@ const registerMember = async (req, res, next) => {
       }
     }
 
+    // Validate avatar image if provided
+    if (avatar) {
+      const isJpgOrPng = avatar.startsWith('data:image/jpeg;base64,') ||
+                         avatar.startsWith('data:image/jpg;base64,') ||
+                         avatar.startsWith('data:image/png;base64,');
+      if (!isJpgOrPng) {
+        return res.status(400).json({
+          success: false,
+          message: 'Profile photo must be a JPG or PNG image.',
+        });
+      }
+      if (avatar.length > 7000000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Profile photo must be 5MB or less.',
+        });
+      }
+    }
+
+    // Validate vehicle documents if provided
+    if (documents && Array.isArray(documents) && documents.length > 0) {
+      for (const doc of documents) {
+        if (typeof doc === 'string') {
+          const isJpgOrPng = doc.startsWith('data:image/jpeg;base64,') ||
+                             doc.startsWith('data:image/jpg;base64,') ||
+                             doc.startsWith('data:image/png;base64,');
+          if (!isJpgOrPng) {
+            return res.status(400).json({
+              success: false,
+              message: 'Car / RC document must be a JPG or PNG image.',
+            });
+          }
+          if (doc.length > 7000000) {
+            return res.status(400).json({
+              success: false,
+              message: 'Car / RC document must be 5MB or less.',
+            });
+          }
+        }
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await User.create({
@@ -89,6 +131,7 @@ const registerMember = async (req, res, next) => {
       role: ROLES.MEMBER,
       societyId: society.id,
       status: 'pending',
+      avatar: avatar || null,
     });
 
     // Create initial primary vehicle pass application if provided
@@ -98,6 +141,7 @@ const registerMember = async (req, res, next) => {
         memberId: user.id,
         societyId: society.id,
         vehicleNumber: normalizedVehicleNum,
+        vehicleName: vehicleName ? vehicleName.trim() : null,
         vehicleType: vehicleType === '2wheeler' ? '2wheeler' : '4wheeler',
         passType: 'regular',
         documents: documents || [],
@@ -128,10 +172,12 @@ const registerMember = async (req, res, next) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        avatar: user.avatar,
         status: user.status,
         vehicle: createdVehicle ? {
           id: createdVehicle.id,
           vehicleNumber: createdVehicle.vehicleNumber,
+          vehicleName: createdVehicle.vehicleName,
           vehicleType: createdVehicle.vehicleType,
           status: createdVehicle.status,
         } : null,

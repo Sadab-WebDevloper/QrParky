@@ -26,14 +26,22 @@ export default function LoginPage() {
   const toast = useToast();
   const navigate = useNavigate();
 
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!emailRegex.test(trimmedEmail)) {
+      toast.error('Please enter a valid email address (e.g. user@domain.com).');
+      return;
+    }
+
     setLoading(true);
     setLockoutAlert(null);
     setAttemptWarning(null);
 
     try {
-      const user = await login(email, password);
+      const user = await login(trimmedEmail, password);
       toast.success(`Welcome back, ${user.name}!`);
       
       if (user.role === ROLES.SUPER_ADMIN) {
@@ -74,9 +82,15 @@ export default function LoginPage() {
 
   const handleForgotPassword = async (e) => {
     e.preventDefault();
+    const trimmedForgotEmail = forgotEmail.trim();
+    if (!emailRegex.test(trimmedForgotEmail)) {
+      toast.error('Please enter a valid email address (e.g. user@domain.com).');
+      return;
+    }
+
     setForgotLoading(true);
     try {
-      const res = await API.post('/auth/forgot-password', { email: forgotEmail });
+      const res = await API.post('/auth/forgot-password', { email: trimmedForgotEmail });
       toast.success(res.data?.message || 'Password reset link sent to your email.');
       setForgotModalOpen(false);
       setForgotEmail('');
@@ -88,27 +102,27 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-[82vh] flex items-center justify-center px-4 py-8 sm:py-12 bg-[#fafaf9] dark:bg-[#09090b]">
-      <div className="w-full max-w-[400px]">
+    <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4 py-4 sm:py-6 bg-[#fafaf9] dark:bg-[#09090b]">
+      <div className="w-full max-w-[360px]">
         
         {/* Header Branding */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 shadow-md shadow-amber-500/20 mb-3">
-            <QrCode className="w-6 h-6 text-zinc-950" />
+        <div className="text-center mb-4">
+          <div className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-amber-600 shadow-md shadow-amber-500/20 mb-2">
+            <QrCode className="w-5 h-5 text-zinc-950" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight">Sign In</h1>
-          <p className="text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm mt-1">Access your society portal & vehicle passes</p>
+          <h1 className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight">Sign In</h1>
+          <p className="text-zinc-500 dark:text-zinc-400 text-xs mt-0.5">Access your society portal & vehicle passes</p>
         </div>
 
         {/* Prominent Malicious Activity & Account Lockout Warning */}
         {lockoutAlert && (
-          <div className="mb-4 p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs space-y-2 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 font-bold text-rose-700 dark:text-rose-300">
-              <ShieldAlert className="w-4 h-4 shrink-0 text-rose-500" />
+          <div className="mb-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs space-y-1.5 animate-in fade-in duration-200">
+            <div className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-300 text-xs">
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-rose-500" />
               <span>Security Lockout Triggered</span>
             </div>
-            <p className="leading-relaxed">{lockoutAlert.message}</p>
-            <div className="font-mono text-[11px] text-rose-600 dark:text-rose-400">
+            <p className="leading-relaxed text-[11px]">{lockoutAlert.message}</p>
+            <div className="font-mono text-[10px] text-rose-600 dark:text-rose-400">
               ⏱️ Auto-unlocks in approximately {lockoutAlert.minutesRemaining} minute(s).
             </div>
           </div>
@@ -116,38 +130,38 @@ export default function LoginPage() {
 
         {/* Failed Attempt Warning Banner */}
         {attemptWarning && !lockoutAlert && (
-          <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2 animate-in fade-in duration-150">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <span>{attemptWarning}</span>
+          <div className="mb-3 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2 animate-in fade-in duration-150">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="text-[11px]">{attemptWarning}</span>
           </div>
         )}
 
         {/* Login Card */}
-        <div className="glass-card p-6 sm:p-7 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl bg-white dark:bg-[#121214] backdrop-blur-xl">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="glass-card p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl bg-white dark:bg-[#121214] backdrop-blur-xl">
+          <form onSubmit={handleSubmit} className="space-y-3">
             
             {/* Email Field */}
             <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5">
+              <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Mail className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email"
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-xs sm:text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
                 />
               </div>
             </div>
 
             {/* Password Field */}
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300">
                   Password
                 </label>
                 <button
@@ -156,29 +170,29 @@ export default function LoginPage() {
                     setForgotEmail(email);
                     setForgotModalOpen(true);
                   }}
-                  className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                  className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
                 >
                   Forgot Password?
                 </button>
               </div>
 
               <div className="relative">
-                <Lock className="w-4 h-4 text-zinc-400 dark:text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Lock className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter Your Password"
-                  className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+                  className="w-full pl-9 pr-9 py-2 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-xs sm:text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 focus:outline-none transition p-1"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 focus:outline-none transition p-1"
                   tabIndex={-1}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
@@ -187,25 +201,26 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || (lockoutAlert && lockoutAlert.minutesRemaining > 0)}
-              className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 font-bold text-sm hover:opacity-95 shadow-lg shadow-amber-500/20 active:scale-[0.99] transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+              className="w-full mt-1.5 h-10 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-zinc-950 font-bold text-xs sm:text-sm hover:opacity-95 shadow-md shadow-amber-500/20 active:scale-[0.99] transition disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {loading ? (
                 <span className="inline-flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                  <span className="w-3.5 h-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                   Verifying Credentials...
                 </span>
               ) : lockoutAlert ? (
                 'Account Temporarily Locked'
               ) : (
                 <>
-                  Sign In <ArrowRight className="w-4 h-4" />
+                  <span>Sign In</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}
             </button>
           </form>
 
           {/* Clean footer info */}
-          <div className="mt-5 pt-4 border-t border-zinc-200 dark:border-zinc-800/80 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="mt-3.5 pt-3 border-t border-zinc-200 dark:border-zinc-800/80 text-center text-xs text-zinc-500 dark:text-zinc-400">
             <span>Housing Society Committee? </span>
             <Link to="/apply-society" className="text-amber-600 dark:text-amber-400 font-semibold hover:underline">
               Onboard Society
@@ -214,9 +229,9 @@ export default function LoginPage() {
         </div>
 
         {/* Security Note */}
-        <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-          <Shield className="w-3.5 h-3.5 text-amber-500" />
-          <span>Brute-Force Protected • Auto Account Lockout Protection</span>
+        <div className="mt-3.5 flex items-center justify-center gap-1.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+          <Shield className="w-3 h-3 text-amber-500" />
+          <span>Brute-Force Protected • Auto Lockout Protection</span>
         </div>
 
       </div>

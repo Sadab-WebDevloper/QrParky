@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import API from '../services/api';
-import { PhoneCall, ShieldCheck, ShieldAlert, User, AlertCircle } from 'lucide-react';
+import { PhoneCall, ShieldCheck, ShieldAlert, User, AlertCircle, AlertTriangle } from 'lucide-react';
 
 export default function PassVerifyPage() {
   const { token } = useParams();
@@ -137,6 +137,17 @@ export default function PassVerifyPage() {
               </div>
             </div>
 
+            {/* Validity Information */}
+            <div className="py-2 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>1-Year Official Permit</span>
+              </span>
+              <span className="font-mono text-zinc-500 dark:text-zinc-400 font-normal">
+                {data?.expiresAt ? `Expires: ${new Date(data.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : `Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}`}
+              </span>
+            </div>
+
             {/* 3. Call Society Admin Button */}
             {adminPhone ? (
               <div className="space-y-2 pt-1">
@@ -161,48 +172,66 @@ export default function PassVerifyPage() {
         )}
 
         {/* Invalid / Denied State */}
-        {!loading && !verified && (
-          <div className="glass-card p-6 rounded-3xl border border-red-300 dark:border-red-900/50 bg-white dark:bg-[#121214] shadow-xl text-center space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mx-auto">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-
-            <div className="space-y-1">
-              <h3 className="text-base font-black text-red-600 dark:text-red-400">
-                Invalid or Inactive Pass
-              </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {errorMessage}
-              </p>
-            </div>
-
-            {/* Show Number Plate & Admin Call button if available even if inactive */}
-            {vehicleNumber !== '---' && (
-              <div className="py-2 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200">
-                Plate: {vehicleNumber}
+        {!loading && !verified && (() => {
+          const isSuspended = errorMessage?.toLowerCase().includes('suspended') || !!data?.suspensionReason;
+          return (
+            <div className={`glass-card p-6 rounded-3xl border ${
+              isSuspended 
+                ? 'border-amber-400 dark:border-amber-600/50 bg-amber-500/5' 
+                : 'border-red-300 dark:border-red-900/50'
+            } bg-white dark:bg-[#121214] shadow-xl text-center space-y-4`}>
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
+                isSuspended ? 'bg-amber-500/15 text-amber-500' : 'bg-red-500/10 text-red-500'
+              }`}>
+                {isSuspended ? <AlertTriangle className="w-6 h-6 stroke-[2.5]" /> : <ShieldAlert className="w-6 h-6" />}
               </div>
-            )}
 
-            {adminPhone && (
-              <a
-                href={`tel:${adminPhone}`}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition active:scale-95"
-              >
-                <PhoneCall className="w-3.5 h-3.5" />
-                <span>Call Society Admin ({adminPhone})</span>
-              </a>
-            )}
+              <div className="space-y-1">
+                <h3 className={`text-base font-black ${
+                  isSuspended ? 'text-amber-700 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {isSuspended ? 'Access Denied: Pass Suspended' : 'Invalid or Inactive Pass'}
+                </h3>
+                <p className="text-xs text-zinc-600 dark:text-zinc-300 font-medium">
+                  {errorMessage}
+                </p>
+                {data?.suspensionReason && !errorMessage.includes(data.suspensionReason) && (
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                    <strong>Reason:</strong> {data.suspensionReason}
+                  </p>
+                )}
+              </div>
 
-            <div className="pt-2">
-              <Link
-                to="/"
-                className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline"
-              >
-                Go to QrParky Home
-              </Link>
+              {/* Show Number Plate & Admin Call button if available even if inactive */}
+              {vehicleNumber !== '---' && (
+                <div className="py-2 px-3 rounded-xl bg-zinc-100 dark:bg-zinc-800 font-mono font-bold text-sm text-zinc-800 dark:text-zinc-200">
+                  Plate: {vehicleNumber}
+                </div>
+              )}
+
+              {adminPhone && (
+                <a
+                  href={`tel:${adminPhone}`}
+                  className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-white font-bold text-xs shadow-md transition active:scale-95 ${
+                    isSuspended ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'
+                  }`}
+                >
+                  <PhoneCall className="w-3.5 h-3.5" />
+                  <span>Call Society Admin ({adminPhone})</span>
+                </a>
+              )}
+
+              <div className="pt-2">
+                <Link
+                  to="/"
+                  className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline"
+                >
+                  Go to QrParky Home
+                </Link>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Footer */}
         <div className="text-center text-[10px] text-zinc-600 dark:text-zinc-400">

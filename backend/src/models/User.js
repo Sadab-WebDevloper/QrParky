@@ -69,6 +69,10 @@ const User = sequelize.define('User', {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  avatar: {
+    type: DataTypes.TEXT('long'),
+    allowNull: true,
+  },
 }, {
   tableName: 'users',
 });

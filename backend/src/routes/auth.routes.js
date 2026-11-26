@@ -17,16 +17,18 @@ const {
 const validate = require('../middleware/validate');
 const { z } = require('zod');
 
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
 const loginSchema = z.object({
   body: z.object({
-    email: z.string().email(),
+    email: z.string().regex(emailRegex, 'Please enter a valid email address'),
     password: z.string().min(6),
   }),
 });
 
 const forgotPasswordSchema = z.object({
   body: z.object({
-    email: z.string().email(),
+    email: z.string().regex(emailRegex, 'Please enter a valid email address'),
   }),
 });
 

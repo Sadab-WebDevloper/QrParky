@@ -7,6 +7,12 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        // Override ALL Tailwind font families to Roboto globally
+        sans:  ['Roboto', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['Roboto', 'ui-serif', 'Georgia', 'serif'],
+        mono:  ['Roboto Mono', 'Roboto', 'ui-monospace', 'monospace'],
+      },
       colors: {
         // Luxury Gold
         gold: {

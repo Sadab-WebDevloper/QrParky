@@ -82,6 +82,30 @@ const ensureUserSecurityColumns = async () => {
       await sequelize.query('ALTER TABLE users ADD COLUMN password_reset_expiry DATETIME NULL;');
       logger.info('✅ Added password_reset_expiry column to users table.');
     }
+    if (!columnNames.includes('avatar')) {
+      await sequelize.query('ALTER TABLE users ADD COLUMN avatar LONGTEXT NULL;');
+      logger.info('✅ Added avatar column to users table.');
+    }
+
+    const [vehicleCols] = await sequelize.query(`
+      SELECT COLUMN_NAME 
+      FROM information_schema.COLUMNS 
+      WHERE TABLE_SCHEMA = :dbName AND TABLE_NAME = 'vehicles';
+    `, { replacements: { dbName: config.db.name } });
+    const vehicleColNames = vehicleCols.map(c => c.COLUMN_NAME.toLowerCase());
+    if (!vehicleColNames.includes('vehicle_name')) {
+      await sequelize.query('ALTER TABLE vehicles ADD COLUMN vehicle_name VARCHAR(100) NULL;');
+      logger.info('✅ Added vehicle_name column to vehicles table.');
+    }
+    if (!vehicleColNames.includes('suspension_reason')) {
+      await sequelize.query('ALTER TABLE vehicles ADD COLUMN suspension_reason VARCHAR(255) NULL;');
+      logger.info('✅ Added suspension_reason column to vehicles table.');
+    }
+    try {
+      await sequelize.query("ALTER TABLE vehicles MODIFY COLUMN status ENUM('pending', 'approved', 'rejected', 'awaiting_payment', 'active', 'expired', 'suspended') NOT NULL DEFAULT 'pending';");
+    } catch (enumErr) {
+      // Ignored if already updated
+    }
   } catch (err) {
     logger.warn(`User security columns check: ${err.message}`);
   }

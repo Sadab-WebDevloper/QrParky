@@ -170,6 +170,7 @@ const login = async (req, res, next) => {
           status: user.status,
           societyId: user.societyId,
           societyName: user.society ? user.society.name : null,
+          avatar: user.avatar || null,
         },
       },
     });
@@ -259,7 +260,7 @@ const forgotPassword = async (req, res, next) => {
     if (!user) {
       return res.json({
         success: true,
-        message: 'If an account exists with this email, a password reset link has been dispatched.',
+        message: 'If this email is registered, a password reset link has been sent to your inbox.',
       });
     }
 
@@ -291,7 +292,7 @@ const forgotPassword = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: 'If an account exists with this email, a password reset link has been dispatched.',
+      message: 'If this email is registered, a password reset link has been sent to your inbox.',
     });
   } catch (error) {
     next(error);

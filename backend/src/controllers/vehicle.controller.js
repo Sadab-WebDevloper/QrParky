@@ -160,12 +160,16 @@ const approveVehicle = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Vehicle status is currently '${vehicle.status}'.` });
     }
 
+    // 1 Year validity period from approval
+    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
     // Generate Encrypted QR Code record (for preview / ready state)
     const qrPayload = {
       vehicleId: vehicle.id,
       societyId: vehicle.societyId,
       vehicleNumber: vehicle.vehicleNumber,
       issuedAt: new Date().toISOString(),
+      expiresAt: expiresAt.toISOString(),
     };
     const encryptedToken = encryptPayload(qrPayload);
     const verificationUrl = `${config.frontendUrl}/pass/verify/${encryptedToken}`;
@@ -177,7 +181,8 @@ const approveVehicle = async (req, res, next) => {
         vehicleId: vehicle.id,
         payloadEncrypted: encryptedToken,
         qrImageUrl,
-        isActive: false, // inactive until ₹299 payment
+        isActive: false, // inactive until ₹1 payment
+        expiresAt,
       },
     });
 
@@ -186,6 +191,7 @@ const approveVehicle = async (req, res, next) => {
         payloadEncrypted: encryptedToken,
         qrImageUrl,
         isActive: false,
+        expiresAt,
         revokedAt: null,
       });
     }
@@ -202,12 +208,12 @@ const approveVehicle = async (req, res, next) => {
       action: 'vehicle_approved_awaiting_payment',
       targetType: 'vehicle',
       targetId: vehicle.id,
-      metadata: { status: 'awaiting_payment', fee: 299 },
+      metadata: { status: 'awaiting_payment', fee: vehicle.vehicleType === '2wheeler' ? 199 : 299 },
     });
 
     return res.json({
       success: true,
-      message: 'Vehicle approved by Committee! Member must pay ₹299 pass fee to unlock & download the pass.',
+      message: `Vehicle approved by Committee! Member must pay ${vehicle.vehicleType === '2wheeler' ? '₹199' : '₹299'} pass fee to unlock & download the pass.`,
       data: vehicle,
     });
   } catch (error) {
@@ -281,7 +287,7 @@ const getVehicleQR = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Vehicle not found or not in your society.' });
     }
 
-    if (vehicle.status !== 'active' && vehicle.status !== 'awaiting_payment') {
+    if (vehicle.status !== 'active' && vehicle.status !== 'awaiting_payment' && vehicle.status !== 'suspended') {
       return res.status(403).json({
         success: false,
         message: `QR code vault is restricted. Vehicle status is '${vehicle.status}'. Activation requires approval/payment verification.`,
@@ -293,6 +299,7 @@ const getVehicleQR = async (req, res, next) => {
     }
 
     const isLocked = vehicle.status === 'awaiting_payment';
+    const isSuspended = vehicle.status === 'suspended';
 
     res.json({
       success: true,
@@ -302,15 +309,17 @@ const getVehicleQR = async (req, res, next) => {
         vehicleType: vehicle.vehicleType,
         passType: vehicle.passType,
         status: vehicle.status,
+        suspensionReason: vehicle.suspensionReason,
         isLocked,
-        fee: 299,
+        isSuspended,
+        fee: 1,
         ownerName: vehicle.owner?.name || 'Resident',
         ownerPhone: vehicle.owner?.phone || '',
         societyName: vehicle.society?.name || 'Society',
         qrImageUrl: vehicle.qrCode.qrImageUrl,
         payloadEncrypted: isLocked ? null : vehicle.qrCode.payloadEncrypted,
         generatedAt: vehicle.qrCode.generatedAt,
-        expiresAt: vehicle.qrCode.expiresAt,
+        expiresAt: vehicle.qrCode.expiresAt || new Date(new Date(vehicle.qrCode.generatedAt || vehicle.createdAt).getTime() + 365 * 24 * 60 * 60 * 1000),
       },
     });
   } catch (error) {
@@ -319,40 +328,101 @@ const getVehicleQR = async (req, res, next) => {
 };
 
 /**
- * Admin / Society Admin: Revoke lost/stolen QR Code
+ * Admin / Society Admin: Suspend Vehicle Pass (reversible hold)
  */
-const revokeQRCode = async (req, res, next) => {
+const suspendVehiclePass = async (req, res, next) => {
   try {
     const { id } = req.params; // vehicleId
     const { reason } = req.body;
 
-    const qrCode = await QRCode.findOne({ where: { vehicleId: id } });
-    if (!qrCode) {
-      return res.status(404).json({ success: false, message: 'QR Code not found for this vehicle.' });
+    const vehicle = await Vehicle.findByPk(id, {
+      include: [{ model: QRCode, as: 'qrCode' }],
+    });
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: 'Vehicle not found.' });
     }
 
-    await qrCode.update({
-      isActive: false,
-      revokedAt: new Date(),
-    });
+    const suspensionReason = reason?.trim() || 'Suspended by society admin';
 
-    // Mark vehicle expired/revoked
-    await Vehicle.update({ status: 'expired' }, { where: { id } });
+    if (vehicle.qrCode) {
+      await vehicle.qrCode.update({
+        isActive: false,
+        revokedAt: new Date(),
+      });
+    }
+
+    await vehicle.update({
+      status: 'suspended',
+      suspensionReason,
+    });
 
     await logAudit({
       actorId: req.user.id,
       actorRole: req.user.role,
-      action: 'qr_revoked',
-      targetType: 'qr_code',
-      targetId: qrCode.id,
-      metadata: { vehicleId: id, reason },
+      action: 'vehicle_pass_suspended',
+      targetType: 'vehicle',
+      targetId: id,
+      metadata: { reason: suspensionReason },
     });
 
-    res.json({ success: true, message: 'QR Code successfully revoked. Access disabled.' });
+    res.json({
+      success: true,
+      message: 'Vehicle pass temporarily suspended. Resident will see the reason.',
+      data: { id: vehicle.id, status: 'suspended', suspensionReason },
+    });
   } catch (error) {
     next(error);
   }
 };
+
+/**
+ * Admin / Society Admin: Reactivate Vehicle Pass (restore to active)
+ */
+const reactivateVehiclePass = async (req, res, next) => {
+  try {
+    const { id } = req.params; // vehicleId
+
+    const vehicle = await Vehicle.findByPk(id, {
+      include: [{ model: QRCode, as: 'qrCode' }],
+    });
+    if (!vehicle) {
+      return res.status(404).json({ success: false, message: 'Vehicle not found.' });
+    }
+
+    if (vehicle.qrCode) {
+      await vehicle.qrCode.update({
+        isActive: true,
+        revokedAt: null,
+      });
+    }
+
+    await vehicle.update({
+      status: 'active',
+      suspensionReason: null,
+    });
+
+    await logAudit({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'vehicle_pass_reactivated',
+      targetType: 'vehicle',
+      targetId: id,
+    });
+
+    res.json({
+      success: true,
+      message: 'Vehicle pass reactivated successfully! Access restored to Active.',
+      data: { id: vehicle.id, status: 'active' },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin / Society Admin: Revoke lost/stolen QR Code (calls suspendVehiclePass)
+ */
+const revokeQRCode = suspendVehiclePass;
 
 /**
  * Public Guard Verification Endpoint: Scan & decrypt QR Token
@@ -384,17 +454,40 @@ const verifyQRToken = async (req, res, next) => {
       attributes: ['name', 'phone', 'email'],
     });
 
-    if (!vehicle || vehicle.status !== 'active') {
+    if (!vehicle) {
+      return res.status(404).json({
+        success: false,
+        valid: false,
+        message: 'Vehicle record not found.',
+      });
+    }
+
+    if (vehicle.status === 'suspended') {
       return res.status(400).json({
         success: false,
         valid: false,
-        message: 'ACCESS DENIED. Vehicle pass is inactive, pending approval, or unverified.',
-        data: vehicle ? {
+        message: `PASS SUSPENDED: ${vehicle.suspensionReason || 'Temporary administrative hold'}. Access is temporarily disabled.`,
+        data: {
           vehicleNumber: vehicle.vehicleNumber,
           societyName: vehicle.society?.name || 'Society',
           adminName: societyAdmin?.name || 'Society Admin',
           adminPhone: societyAdmin?.phone || '',
-        } : null,
+          suspensionReason: vehicle.suspensionReason,
+        },
+      });
+    }
+
+    if (vehicle.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        message: 'ACCESS DENIED. Vehicle pass is inactive, pending approval, or unverified.',
+        data: {
+          vehicleNumber: vehicle.vehicleNumber,
+          societyName: vehicle.society?.name || 'Society',
+          adminName: societyAdmin?.name || 'Society Admin',
+          adminPhone: societyAdmin?.phone || '',
+        },
       });
     }
 
@@ -408,6 +501,23 @@ const verifyQRToken = async (req, res, next) => {
           societyName: vehicle.society?.name || 'Society',
           adminName: societyAdmin?.name || 'Society Admin',
           adminPhone: societyAdmin?.phone || '',
+        },
+      });
+    }
+
+    // Check 1-Year Expiration
+    const expiresAtDate = vehicle.qrCode.expiresAt || (payload.expiresAt ? new Date(payload.expiresAt) : null);
+    if (expiresAtDate && new Date() > new Date(expiresAtDate)) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        message: 'ACCESS DENIED. Vehicle pass has expired (1-year validity period ended). Please contact Society Admin for renewal.',
+        data: {
+          vehicleNumber: vehicle.vehicleNumber,
+          societyName: vehicle.society?.name || 'Society',
+          adminName: societyAdmin?.name || 'Society Admin',
+          adminPhone: societyAdmin?.phone || '',
+          expiredAt: expiresAtDate,
         },
       });
     }
@@ -429,6 +539,7 @@ const verifyQRToken = async (req, res, next) => {
         adminPhone: societyAdmin?.phone || '',
         adminEmail: societyAdmin?.email || '',
         issuedAt,
+        expiresAt: expiresAtDate || new Date(new Date(issuedAt || Date.now()).getTime() + 365 * 24 * 60 * 60 * 1000),
       },
     });
   } catch (error) {
@@ -448,5 +559,7 @@ module.exports = {
   rejectVehicle,
   getVehicleQR,
   revokeQRCode,
+  suspendVehiclePass,
+  reactivateVehiclePass,
   verifyQRToken,
 };

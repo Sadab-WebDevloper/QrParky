@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -19,7 +19,13 @@ import {
   Printer,
   Lock,
   CreditCard,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  Search,
+  X,
+  Filter,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 
 export default function MemberDashboard() {
@@ -28,6 +34,12 @@ export default function MemberDashboard() {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'awaiting_payment', 'pending'
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const statusDropdownRef = useRef(null);
 
   // Vehicle Registration Modal & Form
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -39,6 +51,17 @@ export default function MemberDashboard() {
 
   // QR Pass Modal State
   const [activeQRData, setActiveQRData] = useState(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) {
+        setStatusDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchVehicles = async () => {
     setLoading(true);
@@ -61,10 +84,23 @@ export default function MemberDashboard() {
   const handleDocumentChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size must be under 5MB.');
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    const ext = file.name ? file.name.split('.').pop().toLowerCase() : '';
+    const isValid = allowedTypes.includes(file.type?.toLowerCase()) || ['jpg', 'jpeg', 'png'].includes(ext);
+
+    if (!isValid) {
+      toast.error('Only JPG and PNG images are allowed.');
+      e.target.value = '';
       return;
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size must be 5MB or less.');
+      e.target.value = '';
+      return;
+    }
+
     setDocumentName(file.name);
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -127,7 +163,7 @@ export default function MemberDashboard() {
     });
   };
 
-  // Payment Handler for ₹299 Pass Fee using Official Razorpay Checkout
+  // Payment Handler for Pass Fees (₹299 for 4-Wheeler / ₹199 for 2-Wheeler) using Official Razorpay Checkout
   const handleInitiatePayment = async (vehicleId) => {
     try {
       setPaymentLoading(true);
@@ -156,7 +192,7 @@ export default function MemberDashboard() {
       // Configure Official Razorpay Checkout Modal Options
       const options = {
         key: orderData.keyId || 'rzp_test_U2RwL6i1AZ9RIK',
-        amount: orderData.amount, // in paise: 29900
+        amount: orderData.amount, // in paise
         currency: orderData.currency || 'INR',
         name: 'QrParky',
         description: `Official Windshield QR Pass (${activeQRData?.vehicleNumber || 'Vehicle'})`,
@@ -172,7 +208,7 @@ export default function MemberDashboard() {
             });
 
             if (verifyRes.data?.success) {
-              toast.success('Payment of ₹299 successful! Official windshield pass unlocked.');
+              toast.success('Payment successful! Official windshield pass unlocked.');
               await fetchVehicles();
               await handleViewQR(vehicleId);
             } else {
@@ -370,189 +406,522 @@ export default function MemberDashboard() {
   const awaitingPaymentVehicles = vehicles.filter((v) => v.status === 'awaiting_payment');
   const pendingVehicles = vehicles.filter((v) => v.status === 'pending');
 
+  const filteredVehicles = vehicles.filter((v) => {
+    const matchesFilter =
+      statusFilter === 'all' ? true :
+      statusFilter === 'active' ? v.status === 'active' :
+      statusFilter === 'suspended' ? (v.status === 'suspended' || (v.status === 'expired' && v.qrCode)) :
+      statusFilter === 'awaiting_payment' ? v.status === 'awaiting_payment' :
+      statusFilter === 'pending' ? v.status === 'pending' :
+      v.status === statusFilter;
+
+    const query = searchQuery.toLowerCase().trim();
+    const matchesSearch = !query ||
+      v.vehicleNumber?.toLowerCase().includes(query) ||
+      v.vehicleType?.toLowerCase().includes(query);
+
+    return matchesFilter && matchesSearch;
+  });
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3">
       
-      {/* Header & Quick Action */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>{user?.societyName || 'Resident Portal'}</span>
+      {/* Page Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {user?.avatar ? (
+            <img src={user.avatar} alt={user?.name || 'Resident'} className="w-10 h-10 rounded-xl object-cover border border-amber-500/40 shadow-sm shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-black text-sm shadow-sm shrink-0">
+              {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-widest mb-0.5">
+              <Building2 className="w-3 h-3" />
+              <span>{user?.societyName || 'Resident Portal'}</span>
+            </div>
+            <h1 className="text-lg sm:text-xl font-extrabold text-zinc-900 dark:text-white tracking-tight leading-tight">
+              {user?.name ? `${user.name}` : 'Resident Member Dashboard'}
+            </h1>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white tracking-tight">
-            My Vehicles & Passes
-          </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Manage your registered flat vehicles, windshield QR access stickers, and entry permits.
-          </p>
         </div>
 
-        <button
-          onClick={() => setIsAddOpen(true)}
-          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs sm:text-sm hover:opacity-95 shadow-md shadow-amber-500/20 active:scale-[0.99] transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="h-8 px-3 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs hover:opacity-95 shadow-sm transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>Add Vehicle</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Grid — Compact low-profile cards matching Super Admin & Society Admin */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+        
+        {/* Total Vehicles Card */}
+        <div 
+          onClick={() => setStatusFilter('all')}
+          className="p-2.5 sm:p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214] glass-card glass-card-hover transition-all duration-200 cursor-pointer"
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Add New Vehicle</span>
-        </button>
-      </div>
-
-      {/* Overview Stat Cards (Consistent compact & balanced sizing) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 mb-6">
-        <div className="glass-card p-3 sm:p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214]">
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Total Vehicles</span>
-            <Car className="w-3.5 h-3.5 text-amber-500" />
+            <div className="w-6.5 h-6.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Car className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white">{vehicles.length}</div>
-          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">Registered in flat</div>
+          <div className="flex items-baseline justify-between mt-1">
+            <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight leading-none">
+              {vehicles.length}
+            </div>
+            <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
+              Registered in flat
+            </div>
+          </div>
         </div>
 
-        <div className="glass-card p-3 sm:p-3.5 rounded-xl border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/10">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Active QR Passes</span>
-            <QrCode className="w-3.5 h-3.5 text-emerald-500" />
+        {/* Active Passes Card */}
+        <div 
+          onClick={() => setStatusFilter('active')}
+          className="p-2.5 sm:p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214] glass-card glass-card-hover transition-all duration-200 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Active Passes</span>
+            <div className="w-6.5 h-6.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+              <QrCode className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400">{activeVehicles.length}</div>
-          <div className="text-[10px] text-emerald-700 dark:text-emerald-400/90 font-semibold mt-0.5">Ready to scan</div>
+          <div className="flex items-baseline justify-between mt-1">
+            <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight leading-none">
+              {activeVehicles.length}
+            </div>
+            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-0.5">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Ready to scan</span>
+            </div>
+          </div>
         </div>
 
-        <div className="glass-card p-3 sm:p-3.5 rounded-xl border border-amber-300/60 dark:border-amber-500/30 bg-amber-50/20 dark:bg-amber-950/10">
-          <div className="flex items-center justify-between mb-1.5">
+        {/* Fee Pending Card */}
+        <div 
+          onClick={() => setStatusFilter('awaiting_payment')}
+          className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-200 cursor-pointer glass-card glass-card-hover ${
+            awaitingPaymentVehicles.length > 0 
+              ? 'border-amber-400/70 dark:border-amber-500/40 bg-amber-50/25 dark:bg-amber-950/20 shadow-sm' 
+              : 'border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214]'
+          }`}
+        >
+          <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Fee Pending</span>
-            <Lock className="w-3.5 h-3.5 text-amber-500" />
+            <div className="w-6.5 h-6.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Lock className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400">{awaitingPaymentVehicles.length}</div>
-          <div className="text-[10px] text-amber-700 dark:text-amber-400/90 font-semibold mt-0.5">₹299 fee to unlock</div>
+          <div className="flex items-baseline justify-between mt-1">
+            <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 tracking-tight leading-none">
+              {awaitingPaymentVehicles.length}
+            </div>
+            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+              {awaitingPaymentVehicles.length > 0 ? 'Fee to unlock' : 'No dues'}
+            </div>
+          </div>
         </div>
 
-        <div className="glass-card p-3 sm:p-3.5 rounded-xl border border-yellow-300/60 dark:border-yellow-500/30 bg-yellow-50/20 dark:bg-yellow-950/10">
-          <div className="flex items-center justify-between mb-1.5">
+        {/* Under Review Card */}
+        <div 
+          onClick={() => setStatusFilter('pending')}
+          className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-200 cursor-pointer glass-card glass-card-hover ${
+            pendingVehicles.length > 0 
+              ? 'border-yellow-400/70 dark:border-yellow-500/40 bg-yellow-50/25 dark:bg-yellow-950/20 shadow-sm' 
+              : 'border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214]'
+          }`}
+        >
+          <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-yellow-700 dark:text-yellow-400 uppercase tracking-wider">Under Review</span>
-            <Clock className="w-3.5 h-3.5 text-yellow-500" />
+            <div className="w-6.5 h-6.5 rounded-lg bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20 flex items-center justify-center shrink-0">
+              <Clock className="w-3.5 h-3.5" />
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-yellow-600 dark:text-yellow-400">{pendingVehicles.length}</div>
-          <div className="text-[10px] text-yellow-700 dark:text-yellow-400/90 font-semibold mt-0.5">Awaiting committee</div>
+          <div className="flex items-baseline justify-between mt-1">
+            <div className="text-xl sm:text-2xl font-black text-yellow-600 dark:text-yellow-400 tracking-tight leading-none">
+              {pendingVehicles.length}
+            </div>
+            <div className="text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold">
+              {pendingVehicles.length > 0 ? 'Awaiting committee' : 'All approved'}
+            </div>
+          </div>
         </div>
+
       </div>
 
-      {/* Vehicles Grid / Cards */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-white">
-            Vehicle Pass List ({vehicles.length})
-          </h2>
+      {/* Main Vehicle Passes Card */}
+      <div className="animate-tab-pane glass-card rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-[#121214] relative z-10 shadow-sm flex flex-col overflow-visible">
+        
+        {/* Table Card Toolbar: Full Width Search & Status Filter */}
+        <div className="px-3.5 py-2 sm:px-4 sm:py-2.5 border-b border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/60 dark:bg-[#151518]/60 flex items-center justify-between gap-2.5 rounded-t-2xl overflow-visible">
+          <div className="relative flex-1 w-full">
+            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by license plate or vehicle type..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-8 pl-8 pr-8 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition shadow-xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Custom Dropdown: Vehicle Status Filter */}
+          <div className="relative z-30 shrink-0" ref={statusDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+              className="h-8 flex items-center justify-between gap-1.5 px-2.5 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-700/80 text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:border-amber-400 dark:hover:border-amber-500/50 transition cursor-pointer shadow-xs"
+            >
+              <div className="flex items-center gap-1">
+                <Filter className="w-3 h-3 text-amber-500 shrink-0" />
+                <span className="text-zinc-400 text-[11px]">Status:</span>
+                <span className="font-bold text-amber-600 dark:text-amber-400 capitalize text-xs">
+                  {statusFilter === 'all' ? 'All' :
+                   statusFilter === 'active' ? 'Active' :
+                   statusFilter === 'suspended' ? 'Suspended' :
+                   statusFilter === 'awaiting_payment' ? 'Fee Pending' :
+                   'Under Review'}
+                </span>
+              </div>
+              <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {statusDropdownOpen && (
+              <div className="absolute right-0 mt-1.5 w-44 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 shadow-2xl p-1 z-40 animate-dropdown">
+                {[
+                  { value: 'all', label: 'All Vehicles' },
+                  { value: 'active', label: 'Active Passes' },
+                  { value: 'suspended', label: 'Suspended Passes' },
+                  { value: 'awaiting_payment', label: 'Fee Pending' },
+                  { value: 'pending', label: 'Under Review' },
+                ].map((opt) => {
+                  const isSelected = statusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(opt.value);
+                        setStatusDropdownOpen(false);
+                      }}
+                      className={`w-full px-2.5 py-1.5 text-left rounded-lg text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold'
+                          : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 hover:text-amber-600 dark:hover:text-amber-400'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {isSelected && <Check className="w-3 h-3 text-amber-500 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* Content State: Loading, Empty, or Table/Card views */}
         {loading ? (
-          <div className="p-12 text-center text-zinc-400 text-sm animate-pulse glass-card rounded-2xl border border-zinc-200 dark:border-zinc-800">
+          <div className="p-12 text-center text-zinc-400 text-xs">
+            <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
             Loading registered vehicles...
           </div>
         ) : vehicles.length === 0 ? (
-          <div className="p-10 sm:p-14 text-center glass-card rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-[#121214]">
-            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-3 shadow-sm">
+          <div className="p-10 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-2.5 shadow-sm">
               <Car className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1">No vehicles registered yet</h3>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto mb-5 leading-relaxed">
-              Add your car or two-wheeler to generate your society-verified windshield QR access pass.
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-white mb-0.5">No vehicles registered yet</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto mb-4 leading-relaxed">
+              Register your car or two-wheeler to generate your official society-verified windshield QR access pass.
             </p>
             <button
               onClick={() => setIsAddOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-zinc-950 font-bold text-xs hover:opacity-95 shadow-md shadow-amber-500/20 inline-flex items-center gap-1.5 cursor-pointer"
+              className="h-8 px-4 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs hover:opacity-95 shadow-sm inline-flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Register Your First Vehicle</span>
             </button>
           </div>
+        ) : filteredVehicles.length === 0 ? (
+          <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+            <Car className="w-6 h-6 text-zinc-300 dark:text-zinc-600 mx-auto mb-1.5" />
+            No vehicles match your search or filter.
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {vehicles.map((v) => (
-              <div 
-                key={v.id} 
-                className="glass-card p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800/90 bg-white dark:bg-[#121214] shadow-sm hover:border-amber-400 dark:hover:border-amber-500/40 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  {/* Card Top: Type & Status Badge */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                        {v.vehicleType === '2wheeler' ? <Bike className="w-4 h-4" /> : <Car className="w-4 h-4" />}
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-zinc-700 dark:text-zinc-300">
+                <thead className="bg-zinc-50/80 dark:bg-[#161619] text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-200/80 dark:border-zinc-800/80">
+                  <tr>
+                    <th className="px-4 py-2">Vehicle Plate</th>
+                    <th className="px-4 py-2">Type</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2">Permit Details</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200/70 dark:divide-zinc-800/60">
+                  {filteredVehicles.map((v) => {
+                    const isActive = v.status === 'active';
+                    const isSuspended = v.status === 'suspended' || (v.status === 'expired' && v.qrCode);
+                    const isAwaitingPayment = v.status === 'awaiting_payment';
+                    const isPending = v.status === 'pending';
+
+                    return (
+                      <tr key={v.id} className="hover:bg-zinc-50/80 dark:hover:bg-[#18181b]/50 transition-colors">
+                        {/* Vehicle Plate */}
+                        <td className="px-4 py-2">
+                          <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md px-2 py-0.5 shadow-2xs">
+                            <span className="text-[7px] font-black text-blue-600 mr-1">IND</span>
+                            <span className="font-mono font-black text-zinc-950 dark:text-amber-400 text-xs uppercase tracking-wider">
+                              {v.vehicleNumber}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Type */}
+                        <td className="px-4 py-2">
+                          <span className="text-[11px] text-zinc-600 dark:text-zinc-300 capitalize flex items-center gap-1 font-semibold">
+                            {v.vehicleType === '2wheeler' ? <Bike className="w-3.5 h-3.5 text-amber-500" /> : <Car className="w-3.5 h-3.5 text-amber-500" />}
+                            {v.vehicleType === '2wheeler' ? '2-Wheeler (Bike)' : '4-Wheeler (Car)'}
+                          </span>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-2">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                            isActive
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                              : isSuspended
+                              ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                              : isAwaitingPayment
+                              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                              : isPending
+                              ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
+                          }`}>
+                            {isActive && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />}
+                            {isSuspended && <AlertTriangle className="w-2.5 h-2.5 text-rose-500" />}
+                            {isAwaitingPayment && <Lock className="w-2.5 h-2.5 text-amber-500" />}
+                            {isPending && <Clock className="w-2.5 h-2.5 text-yellow-500" />}
+                            <span>
+                              {isActive ? 'Active Pass' :
+                               isSuspended ? 'Pass Suspended' :
+                               isAwaitingPayment ? `Fee Pending (${v.vehicleType === '2wheeler' ? '₹199' : '₹299'})` :
+                               isPending ? 'Under Review' : 'Rejected'}
+                            </span>
+                          </span>
+                        </td>
+
+                        {/* Permit Details */}
+                        <td className="px-4 py-2 text-[11px] text-zinc-500 font-mono">
+                          {isActive ? (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                              <span>Valid: {new Date().getFullYear()}–{new Date().getFullYear() + 1}</span>
+                            </span>
+                          ) : isSuspended ? (
+                            <div className="flex flex-col">
+                              <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-rose-500" />
+                                <span>Administrative Hold</span>
+                              </span>
+                              {v.suspensionReason && (
+                                <span className="text-zinc-600 dark:text-zinc-400 text-[10px] font-sans truncate max-w-[220px]" title={v.suspensionReason}>
+                                  Reason: {v.suspensionReason}
+                                </span>
+                              )}
+                            </div>
+                          ) : isAwaitingPayment ? (
+                            <span className="text-amber-600 dark:text-amber-400">One-time {v.vehicleType === '2wheeler' ? '₹199' : '₹299'} pass fee</span>
+                          ) : (
+                            <span className="text-zinc-400 italic">Society Verification</span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {isActive ? (
+                              <button
+                                type="button"
+                                onClick={() => handleViewQR(v.id)}
+                                className="h-7 px-2.5 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-[11px] flex items-center gap-1 shadow-sm hover:opacity-95 transition cursor-pointer active:scale-95"
+                              >
+                                <QrCode className="w-3 h-3 stroke-[2.5]" />
+                                <span>View QR Pass</span>
+                              </button>
+                            ) : isSuspended ? (
+                              <button
+                                type="button"
+                                onClick={() => handleViewQR(v.id)}
+                                className="h-7 px-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-bold text-[11px] flex items-center gap-1 hover:bg-rose-100 transition cursor-pointer active:scale-95"
+                              >
+                                <AlertTriangle className="w-3 h-3 text-rose-500" />
+                                <span>View Notice</span>
+                              </button>
+                            ) : isAwaitingPayment ? (
+                              <button
+                                type="button"
+                                onClick={() => handleViewQR(v.id)}
+                                className="h-7 px-2.5 rounded-lg bg-gradient-to-r from-amber-500/15 via-yellow-500/15 to-amber-500/15 border border-amber-400/80 text-amber-700 dark:text-amber-400 font-bold text-[11px] flex items-center gap-1 hover:bg-amber-500/25 transition cursor-pointer shadow-sm active:scale-95"
+                              >
+                                <Lock className="w-3 h-3 text-amber-500" />
+                                <span>Unlock (Pay {v.vehicleType === '2wheeler' ? '₹199' : '₹299'})</span>
+                              </button>
+                            ) : isPending ? (
+                              <span className="text-yellow-600 dark:text-yellow-400 text-[11px] font-semibold flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>Under Review</span>
+                              </span>
+                            ) : (
+                              <span className="text-rose-600 dark:text-rose-400 text-[11px] font-semibold">
+                                Rejected
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Box/Card View */}
+            <div className="sm:hidden p-2.5 space-y-2.5">
+              {filteredVehicles.map((v) => {
+                const isActive = v.status === 'active';
+                const isSuspended = v.status === 'suspended' || (v.status === 'expired' && v.qrCode);
+                const isAwaitingPayment = v.status === 'awaiting_payment';
+                const isPending = v.status === 'pending';
+
+                return (
+                  <div
+                    key={v.id}
+                    className="p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#141416] shadow-sm space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="inline-flex items-center bg-zinc-100 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md px-2 py-0.5 shadow-2xs">
+                        <span className="text-[7px] font-black text-blue-600 mr-1">IND</span>
+                        <span className="font-mono font-black text-zinc-950 dark:text-amber-400 text-xs uppercase tracking-wider">
+                          {v.vehicleNumber}
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                        isActive
+                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                          : isSuspended
+                          ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                          : isAwaitingPayment
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                          : isPending
+                          ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                          : 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                      }`}>
+                        {isActive ? 'Active Pass' :
+                         isSuspended ? '⏸ Pass Suspended' :
+                         isAwaitingPayment ? `Fee Pending (${v.vehicleType === '2wheeler' ? '₹199' : '₹299'})` :
+                         isPending ? 'Under Review' : 'Rejected'}
+                      </span>
+                    </div>
+
+                    {isSuspended && (
+                      <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-300 space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                          <span>Vehicle Pass Temporarily Suspended</span>
+                        </div>
+                        {v.suspensionReason && (
+                          <p className="text-[11px] text-zinc-700 dark:text-zinc-300 pl-5">
+                            <strong>Reason:</strong> {v.suspensionReason}
+                          </p>
+                        )}
+                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400 pl-5">
+                          Please contact your Society Management Office to resolve and reactivate your pass.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] py-1.5 border-y border-zinc-100 dark:border-zinc-800/80">
+                      <div>
+                        <span className="text-[9px] text-zinc-400 uppercase font-bold tracking-wider block">Vehicle Type</span>
+                        <span className="font-semibold text-zinc-800 dark:text-zinc-200 capitalize flex items-center gap-1 mt-0.5">
+                          {v.vehicleType === '2wheeler' ? <Bike className="w-3 h-3 text-amber-500" /> : <Car className="w-3 h-3 text-amber-500" />}
+                          {v.vehicleType}
+                        </span>
                       </div>
                       <div>
-                        <span className="text-xs font-bold text-zinc-900 dark:text-white capitalize">
-                          {v.vehicleType === '2wheeler' ? '2-Wheeler (Bike)' : '4-Wheeler (Car)'}
+                        <span className="text-[9px] text-zinc-400 uppercase font-bold tracking-wider block">Permit Status</span>
+                        <span className="font-mono text-zinc-600 dark:text-zinc-300 block mt-0.5">
+                          {isActive ? `Valid: ${new Date().getFullYear()}` : isSuspended ? 'Hold' : isAwaitingPayment ? 'Fee Required' : 'In Review'}
                         </span>
-                        <div className="text-[10px] text-zinc-400">Society Pass</div>
                       </div>
                     </div>
 
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                      v.status === 'active' 
-                        ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/60' 
-                        : v.status === 'awaiting_payment'
-                        ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800/60'
-                        : v.status === 'pending'
-                        ? 'bg-yellow-100 dark:bg-yellow-950/80 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800/60'
-                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
-                    }`}>
-                      {v.status === 'active' && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
-                      {v.status === 'awaiting_payment' && <Lock className="w-3 h-3 text-amber-500" />}
-                      {v.status === 'pending' && <Clock className="w-3 h-3 text-yellow-500" />}
-                      {v.status === 'rejected' && <XCircle className="w-3 h-3 text-rose-500" />}
-                      <span>
-                        {v.status === 'active' ? 'Active Pass' : 
-                         v.status === 'awaiting_payment' ? 'Fee Pending (₹299)' :
-                         v.status === 'pending' ? 'Under Review' : 'Rejected'}
-                      </span>
-                    </span>
+                    {/* Actions */}
+                    <div className="pt-1">
+                      {isActive ? (
+                        <button
+                          type="button"
+                          onClick={() => handleViewQR(v.id)}
+                          className="w-full h-8 rounded-lg bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition cursor-pointer"
+                        >
+                          <QrCode className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>View & Print QR Pass</span>
+                        </button>
+                      ) : isSuspended ? (
+                        <button
+                          type="button"
+                          onClick={() => handleViewQR(v.id)}
+                          className="w-full h-8 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                          <span>View Suspension Notice</span>
+                        </button>
+                      ) : isAwaitingPayment ? (
+                        <button
+                          type="button"
+                          onClick={() => handleViewQR(v.id)}
+                          className="w-full h-8 rounded-lg bg-gradient-to-r from-amber-500/15 via-yellow-500/15 to-amber-500/15 border border-amber-400/80 text-amber-700 dark:text-amber-400 font-bold text-[11px] flex items-center justify-center gap-1.5 hover:bg-amber-500/25 active:scale-95 transition cursor-pointer"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Unlock Pass (Pay {v.vehicleType === '2wheeler' ? '₹199' : '₹299'})</span>
+                        </button>
+                      ) : isPending ? (
+                        <div className="p-2 rounded-lg bg-yellow-500/10 border border-yellow-400/20 text-center text-[10px] text-yellow-700 dark:text-yellow-400 font-medium">
+                          Verification in progress by Committee
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-400/20 text-center text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                          Application rejected. Contact Admin.
+                        </div>
+                      )}
+                    </div>
                   </div>
-
-                  {/* Indian License Plate Mockup */}
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border-2 border-zinc-800 dark:border-zinc-700 shadow-sm mb-4">
-                    <div className="flex flex-col items-center justify-center leading-none pr-1.5 border-r border-zinc-300 dark:border-zinc-700 text-[8px] font-black text-blue-700 dark:text-blue-400">
-                      <span>🇮🇳</span>
-                      <span className="text-[6px] tracking-tighter mt-0.5 font-bold">IND</span>
-                    </div>
-                    <span className="text-sm font-black font-mono tracking-wider text-zinc-900 dark:text-white uppercase">
-                      {v.vehicleNumber}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Card Action Button */}
-                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/70">
-                  {v.status === 'active' ? (
-                    <button
-                      type="button"
-                      onClick={() => handleViewQR(v.id)}
-                      className="w-full h-10 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 hover:opacity-95 transition cursor-pointer"
-                    >
-                      <QrCode className="w-4 h-4 stroke-[2.5]" />
-                      <span>View & Print QR Pass</span>
-                    </button>
-                  ) : v.status === 'awaiting_payment' ? (
-                    <button
-                      type="button"
-                      onClick={() => handleViewQR(v.id)}
-                      className="w-full h-10 rounded-xl bg-gradient-to-r from-amber-500/15 via-yellow-500/15 to-amber-500/15 border border-amber-400/80 text-amber-700 dark:text-amber-400 font-bold text-xs flex items-center justify-center gap-2 hover:bg-amber-500/25 transition cursor-pointer shadow-sm"
-                    >
-                      <Lock className="w-4 h-4 text-amber-500" />
-                      <span>Unlock Pass (Pay ₹299)</span>
-                    </button>
-                  ) : v.status === 'pending' ? (
-                    <div className="p-2 rounded-xl bg-yellow-500/10 border border-yellow-400/20 text-center text-[11px] text-yellow-700 dark:text-yellow-400 font-medium">
-                      Verification in progress by Committee
-                    </div>
-                  ) : (
-                    <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-400/20 text-center text-[11px] text-rose-600 dark:text-rose-400 font-medium">
-                      Application rejected. Contact Admin.
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -616,15 +985,15 @@ export default function MemberDashboard() {
           {/* RC / Vehicle Document Upload */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              Vehicle RC Certificate / Photo <span className="text-zinc-400 font-normal">(Optional)</span>
+              Vehicle RC Certificate / Car Photo <span className="text-zinc-400 font-normal">(JPG, PNG • Max 5MB)</span>
             </label>
             <div className="flex items-center gap-2.5">
               <label className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-amber-500 bg-zinc-50 dark:bg-[#18181b] cursor-pointer text-xs text-zinc-600 dark:text-zinc-300 transition">
                 <FileText className="w-4 h-4 text-amber-500" />
-                <span className="truncate max-w-[200px]">{documentName || 'Attach Photo or PDF'}</span>
+                <span className="truncate max-w-[200px]">{documentName || 'Attach JPG or PNG (Max 5MB)'}</span>
                 <input
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
                   onChange={handleDocumentChange}
                   className="hidden"
                 />
@@ -660,6 +1029,22 @@ export default function MemberDashboard() {
       <Modal isOpen={!!activeQRData} onClose={() => setActiveQRData(null)} title="Official Society Vehicle Pass">
         {activeQRData && (
           <div className="space-y-4 text-center">
+
+            {/* Suspended Alert Banner */}
+            {(activeQRData.isSuspended || activeQRData.status === 'suspended') && (
+              <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800/80 text-xs text-rose-800 dark:text-rose-300 text-left flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-rose-700 dark:text-rose-300">Vehicle Pass Temporarily Suspended</div>
+                  <p className="text-[11px] mt-0.5 text-zinc-700 dark:text-zinc-300">
+                    <strong>Reason:</strong> {activeQRData.suspensionReason || 'Temporary administrative hold by society administration.'}
+                  </p>
+                  <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
+                    Gate scanner access is paused. Please contact your society management office to resolve and reactivate your pass.
+                  </p>
+                </div>
+              </div>
+            )}
             
             {/* Digital Pass Card */}
             <div className="relative rounded-3xl p-5 bg-gradient-to-b from-white via-zinc-50 to-zinc-100 dark:from-[#18181c] dark:via-[#141416] dark:to-[#101012] border border-amber-400/50 dark:border-amber-500/40 shadow-xl overflow-hidden">
@@ -680,15 +1065,20 @@ export default function MemberDashboard() {
                   </div>
                 </div>
 
-                {activeQRData.isLocked ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800/60 text-[10px] font-black">
+                {(activeQRData.isSuspended || activeQRData.status === 'suspended') ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25 text-[10px] font-bold">
+                    <AlertTriangle className="w-3 h-3 text-rose-500" />
+                    PASS SUSPENDED
+                  </span>
+                ) : activeQRData.isLocked ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 text-[10px] font-bold">
                     <Lock className="w-3 h-3 text-amber-500" />
-                    LOCKED (FEE: ₹299)
+                    PENDING ACTIVATION
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800/60 text-[10px] font-black">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-bold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    ACTIVE
+                    ACTIVE PERMIT
                   </span>
                 )}
               </div>
@@ -712,39 +1102,40 @@ export default function MemberDashboard() {
                     src={activeQRData.qrImageUrl} 
                     alt={`Pass QR Code ${activeQRData.vehicleNumber}`} 
                     className={`w-36 h-36 object-contain transition-all duration-300 ${
-                      activeQRData.isLocked ? 'filter blur-[14px] opacity-40 select-none pointer-events-none' : ''
+                      (activeQRData.isLocked || activeQRData.isSuspended || activeQRData.status === 'suspended') ? 'filter blur-[4px] select-none pointer-events-none' : ''
                     }`}
                     draggable={false}
                     onContextMenu={(e) => e.preventDefault()}
                   />
 
-                  {/* Anti-screenshot & Locked Overlay */}
+                  {/* Frosted Security Watermark Overlay */}
                   {activeQRData.isLocked && (
                     <div 
-                      className="absolute inset-0 bg-zinc-950/65 backdrop-blur-[2px] flex flex-col items-center justify-center p-2 text-center select-none"
+                      className="absolute inset-0 bg-black/15 backdrop-blur-[1px] flex flex-col items-center justify-center p-2 text-center select-none"
                       onContextMenu={(e) => e.preventDefault()}
                     >
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center mb-1.5 text-zinc-950 shadow-lg shadow-amber-500/30 animate-pulse">
-                        <Lock className="w-5 h-5 stroke-[2.5]" />
+                      <div className="w-9 h-9 rounded-xl bg-zinc-950/85 backdrop-blur-md border border-amber-500/40 text-amber-400 flex items-center justify-center mb-1 shadow-md">
+                        <Lock className="w-4 h-4 stroke-[2.5]" />
                       </div>
-                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
-                        QR BLURRED
-                      </span>
-                      <span className="text-[9px] font-bold text-zinc-300 mt-0.5">
-                        Screenshot Disabled • Unscannable
+                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100 bg-white/90 dark:bg-zinc-900/90 px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-700/80 shadow-xs">
+                        Activation Required
                       </span>
                     </div>
                   )}
-                </div>
 
-                <div className="mt-2.5 font-mono text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded border border-amber-400/20 flex items-center justify-center gap-1.5">
-                  {activeQRData.isLocked ? (
-                    <>
-                      <Lock className="w-3 h-3 text-amber-500" />
-                      <span>PASS FEE REQUIRED: ₹299</span>
-                    </>
-                  ) : (
-                    <span>PASS ID: QP-{new Date().getFullYear()}-{activeQRData.vehicleNumber}</span>
+                  {/* Suspended Overlay */}
+                  {(activeQRData.isSuspended || activeQRData.status === 'suspended') && (
+                    <div 
+                      className="absolute inset-0 bg-zinc-950/70 backdrop-blur-[2px] flex flex-col items-center justify-center p-2 text-center select-none"
+                      onContextMenu={(e) => e.preventDefault()}
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-rose-950/90 border border-rose-500/60 text-rose-400 flex items-center justify-center mb-1 shadow-md">
+                        <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-white bg-rose-600/90 px-2 py-0.5 rounded-md border border-rose-500 shadow-xs">
+                        Access Paused
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -772,7 +1163,12 @@ export default function MemberDashboard() {
             </div>
 
             {/* Print & Download Actions or Pay Fee Button */}
-            {activeQRData.isLocked ? (
+            {(activeQRData.isSuspended || activeQRData.status === 'suspended') ? (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-center text-xs text-rose-800 dark:text-rose-300">
+                <p className="font-bold">Pass access is on temporary hold.</p>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5">Printing and active gate scanning are disabled until reactivated by society management.</p>
+              </div>
+            ) : activeQRData.isLocked ? (
               <div className="space-y-2 pt-1">
                 <button
                   type="button"
@@ -781,10 +1177,10 @@ export default function MemberDashboard() {
                   className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-zinc-950 font-black text-xs sm:text-sm hover:opacity-95 shadow-lg shadow-amber-500/25 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <CreditCard className="w-4 h-4 stroke-[2.5]" />
-                  <span>{paymentLoading ? 'Processing Checkout...' : 'Pay Pass Fee ₹299 & Download Official Pass'}</span>
+                  <span>{paymentLoading ? 'Processing Activation...' : `Activate & Download Official Pass • ${activeQRData.vehicleType === '2wheeler' ? '₹199' : '₹299'}`}</span>
                 </button>
                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                  🔒 One-time sticker fee • Removes blur and enables instant print & download
+                  🔒 Official Society Windshield Permit 
                 </p>
               </div>
             ) : (

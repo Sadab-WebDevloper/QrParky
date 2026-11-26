@@ -8,7 +8,7 @@ export const ToastProvider = ({ children }) => {
 
   const addToast = (message, type = 'info') => {
     const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type, isExiting: false }]);
 
     setTimeout(() => {
       removeToast(id);
@@ -16,7 +16,12 @@ export const ToastProvider = ({ children }) => {
   };
 
   const removeToast = (id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, isExiting: true } : t))
+    );
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 230);
   };
 
   const success = (msg) => addToast(msg, 'success');
@@ -32,7 +37,9 @@ export const ToastProvider = ({ children }) => {
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-3 p-3.5 sm:p-4 rounded-2xl border shadow-2xl backdrop-blur-2xl transition-all duration-300 transform translate-y-0 animate-in fade-in slide-in-from-top-3 ${
+            className={`pointer-events-auto flex items-start gap-3 p-3.5 sm:p-4 rounded-2xl border shadow-xl backdrop-blur-2xl transition-all duration-300 ${
+              toast.isExiting ? 'animate-toast-out' : 'animate-toast-in'
+            } ${
               toast.type === 'success'
                 ? 'bg-white/95 dark:bg-[#121214]/95 border-amber-300 dark:border-amber-500/40 text-zinc-900 dark:text-zinc-100 shadow-amber-500/10'
                 : toast.type === 'error'

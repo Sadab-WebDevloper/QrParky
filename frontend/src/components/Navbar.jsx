@@ -49,7 +49,7 @@ export default function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 w-full glass-card border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-[#09090b]/90 backdrop-blur-xl transition-colors duration-200">
+      <header className="sticky top-0 z-50 w-full glass-card border-b border-zinc-200 dark:border-zinc-800/80 bg-white/95 dark:bg-[#09090b]/90 backdrop-blur-xl transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           
           {/* Brand Logo */}
@@ -89,9 +89,13 @@ export default function Navbar() {
                     onClick={() => setDropdownOpen(!dropdownOpen)}
                     className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 hover:border-amber-300 dark:hover:border-amber-500/40 transition cursor-pointer"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-black text-xs">
-                      {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                    </div>
+                    {user.avatar ? (
+                      <img src={user.avatar} alt={user.name} className="w-7 h-7 rounded-lg object-cover border border-amber-500/30" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-black text-xs">
+                        {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                    )}
                     <span className="font-semibold text-xs text-zinc-700 dark:text-zinc-200 max-w-[110px] truncate hidden sm:inline">
                       {user.name}
                     </span>
@@ -100,14 +104,25 @@ export default function Navbar() {
 
                   {/* Dropdown Menu */}
                   {dropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-64 glass-card rounded-2xl border border-amber-300/30 dark:border-amber-500/20 shadow-2xl p-2 bg-white dark:bg-[#121214] z-50 animate-dropdown">
+                    <div className="absolute right-0 mt-2 w-64 glass-card rounded-2xl border border-amber-300/30 dark:border-amber-500/20 shadow-2xl p-2 bg-white dark:bg-[#121214] z-[100] animate-dropdown">
                       
                       {/* User Info Header */}
-                      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 mb-1">
-                        <div className="text-sm font-bold text-zinc-900 dark:text-white truncate">{user.name}</div>
-                        <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">{user.email}</div>
-                        
-                        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800/40 text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                      <div className="p-2.5 border-b border-zinc-200 dark:border-zinc-800 mb-1 flex items-center gap-2.5">
+                        {user.avatar ? (
+                          <img src={user.avatar} alt={user.name} className="w-9 h-9 rounded-xl object-cover border border-amber-500/40 shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-black text-sm shrink-0">
+                            {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-bold text-zinc-900 dark:text-white truncate">{user.name}</div>
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">{user.email}</div>
+                        </div>
+                      </div>
+
+                      <div className="px-2.5 pb-2 border-b border-zinc-200 dark:border-zinc-800 mb-1">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800/40 text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
                           {ROLE_LABELS[user.role] || 'User'}
                         </div>
 

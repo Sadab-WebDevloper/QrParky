@@ -13,15 +13,20 @@ const { publicRateLimiter, registrationRateLimiter, checkMaliciousIp } = require
 const validate = require('../middleware/validate');
 const { z } = require('zod');
 
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const fullNameRegex = /^[a-zA-Z]+(?:[ '.-]+[a-zA-Z]+)+$/;
+
 const registerSchema = z.object({
   body: z.object({
-    name: z.string().min(2, 'Name must be at least 2 characters'),
-    email: z.string().email('Please enter a valid email address'),
+    name: z.string().min(3, 'Full name must be at least 3 characters').regex(fullNameRegex, 'Please enter your full name (both first and last name, letters only)'),
+    email: z.string().regex(emailRegex, 'Please enter a valid email address'),
     phone: z.string().regex(/^\d{10}$/, 'Mobile phone must be exactly 10 digits'),
     password: z.string().min(8, 'Password must be at least 8 characters long'),
     vehicleNumber: z.string().min(3).max(20).optional(),
+    vehicleName: z.string().max(100).optional(),
     vehicleType: z.enum(['2wheeler', '4wheeler']).optional(),
     documents: z.array(z.string()).optional(),
+    avatar: z.string().optional(),
   }),
 });
 

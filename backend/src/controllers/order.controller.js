@@ -8,9 +8,8 @@ const logger = require('../utils/logger');
 const config = require('../config/env');
 
 const VEHICLE_PRICES_PAISE = {
-  '2wheeler': 29900,  // ₹299
   '4wheeler': 29900,  // ₹299
-  'other': 29900,     // ₹299
+  '2wheeler': 19900,  // ₹199
 };
 
 /**
@@ -64,7 +63,7 @@ const createOrder = async (req, res, next) => {
     // Calculate total amount in paise
     let totalAmountPaise = 0;
     vehicles.forEach(v => {
-      totalAmountPaise += VEHICLE_PRICES_PAISE[v.vehicleType] || 49900;
+      totalAmountPaise += VEHICLE_PRICES_PAISE[v.vehicleType] || 29900;
     });
 
     const receipt = `rcpt_${memberId}_${Date.now()}`;
@@ -193,12 +192,16 @@ const handlePaymentWebhook = async (req, res, next) => {
       if (vehicle) {
         await vehicle.update({ status: 'active' }, { transaction: t });
 
+        // 1 Year validity period from pass activation
+        const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
         // Encrypt QR token payload securely
         const qrPayloadObj = {
           vehicleId: vehicle.id,
           societyId: vehicle.societyId,
           vehicleNumber: vehicle.vehicleNumber,
           issuedAt: new Date().toISOString(),
+          expiresAt: expiresAt.toISOString(),
         };
 
         const encryptedToken = encryptPayload(qrPayloadObj);
@@ -214,6 +217,7 @@ const handlePaymentWebhook = async (req, res, next) => {
             qrImageUrl: qrImageDataUrl,
             isActive: true,
             generatedAt: new Date(),
+            expiresAt,
           },
           transaction: t,
         });
@@ -223,6 +227,7 @@ const handlePaymentWebhook = async (req, res, next) => {
             payloadEncrypted: encryptedToken,
             qrImageUrl: qrImageDataUrl,
             isActive: true,
+            expiresAt,
             revokedAt: null,
           }, { transaction: t });
         }

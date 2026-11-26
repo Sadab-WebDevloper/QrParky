@@ -27,6 +27,10 @@ const Vehicle = sequelize.define('Vehicle', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  vehicleName: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+  },
   vehicleType: {
     type: DataTypes.ENUM('2wheeler', '4wheeler', 'other'),
     allowNull: false,
@@ -43,9 +47,13 @@ const Vehicle = sequelize.define('Vehicle', {
     defaultValue: 'regular',
   },
   status: {
-    type: DataTypes.ENUM('pending', 'approved', 'rejected', 'awaiting_payment', 'active', 'expired'),
+    type: DataTypes.ENUM('pending', 'approved', 'rejected', 'awaiting_payment', 'active', 'expired', 'suspended'),
     allowNull: false,
     defaultValue: 'pending',
+  },
+  suspensionReason: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
   },
   reviewedBy: {
     type: DataTypes.INTEGER,

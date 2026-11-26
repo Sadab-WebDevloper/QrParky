@@ -8,6 +8,8 @@ const {
   rejectVehicle,
   getVehicleQR,
   revokeQRCode,
+  suspendVehiclePass,
+  reactivateVehiclePass,
   verifyQRToken,
 } = require('../controllers/vehicle.controller');
 const { authenticate } = require('../middleware/authMiddleware');
@@ -18,7 +20,7 @@ const { z } = require('zod');
 const vehicleSchema = z.object({
   body: z.object({
     vehicleNumber: z.string().min(3),
-    vehicleType: z.enum(['2wheeler', '4wheeler', 'other']),
+    vehicleType: z.enum(['2wheeler', '4wheeler']),
     documents: z.array(z.string()).optional(),
   }),
 });
@@ -35,6 +37,8 @@ router.get('/society-admin/vehicles', authenticate, authorize('society_admin', '
 router.get('/society-admin/vehicles/:id/qr', authenticate, authorize('society_admin', 'super_admin'), getVehicleQR);
 router.post('/society-admin/vehicles/:id/approve', authenticate, authorize('society_admin', 'super_admin'), approveVehicle);
 router.post('/society-admin/vehicles/:id/reject', authenticate, authorize('society_admin', 'super_admin'), rejectVehicle);
+router.post('/society-admin/vehicles/:id/suspend', authenticate, authorize('society_admin', 'super_admin'), suspendVehiclePass);
+router.post('/society-admin/vehicles/:id/reactivate', authenticate, authorize('society_admin', 'super_admin'), reactivateVehiclePass);
 router.post('/admin/vehicles/:id/qr/revoke', authenticate, authorize('society_admin', 'super_admin'), revokeQRCode);
 
 // Public Scanner / Security Guard verification endpoint

@@ -210,9 +210,9 @@ const approveSociety = async (req, res, next) => {
       status: 'approved',
     }, { transaction: t });
 
-    // Generate unique permanent invite token (does NOT expire automatically, only rotates when admin clicks refresh)
+    // Generate unique invite token valid for 1 year (365 days)
     const inviteLinkToken = generateRandomToken(24);
-    const inviteLinkExpiry = null;
+    const inviteLinkExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
     await society.update({
       status: 'approved',
@@ -320,9 +320,11 @@ const getOrRotateInviteLink = async (req, res, next) => {
 
     if (rotate === 'true' || !society.inviteLinkToken) {
       const inviteLinkToken = generateRandomToken(24);
-      const inviteLinkExpiry = null; // Permanent link until admin rotates again
+      const inviteLinkExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Valid for 1 year
 
       await society.update({ inviteLinkToken, inviteLinkExpiry });
+      society.inviteLinkToken = inviteLinkToken;
+      society.inviteLinkExpiry = inviteLinkExpiry;
 
       await logAudit({
         actorId: req.user.id,
@@ -331,6 +333,11 @@ const getOrRotateInviteLink = async (req, res, next) => {
         targetType: 'society',
         targetId: society.id,
       });
+    } else if (!society.inviteLinkExpiry) {
+      // Ensure existing societies without expiry date have 1 year from approval/creation
+      const inviteLinkExpiry = new Date(new Date(society.approvedAt || society.createdAt || Date.now()).getTime() + 365 * 24 * 60 * 60 * 1000);
+      await society.update({ inviteLinkExpiry });
+      society.inviteLinkExpiry = inviteLinkExpiry;
     }
 
     res.json({
