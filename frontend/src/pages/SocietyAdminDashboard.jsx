@@ -857,6 +857,13 @@ export default function SocietyAdminDashboard() {
     return matchesFilter && matchesSearch;
   });
 
+  const getMemberVehicles = (member) => {
+    if (member?.vehicles && member.vehicles.length > 0) return member.vehicles;
+    return vehicles.filter(
+      (v) => Number(v.memberId) === Number(member?.id) || Number(v.owner?.id) === Number(member?.id)
+    );
+  };
+
   const inviteUrl = inviteLink ? `${window.location.origin}/register/${inviteLink.inviteLinkToken}` : '';
 
   return (
@@ -1702,9 +1709,11 @@ export default function SocietyAdminDashboard() {
                           </td>
 
                           <td className="px-4 py-2 text-xs">
-                            {m.vehicles && m.vehicles.length > 0 ? (
+                            {(() => {
+                              const memberVehicles = getMemberVehicles(m);
+                              return memberVehicles.length > 0 ? (
                               <div className="space-y-1.5 max-w-xs">
-                                {m.vehicles.map((v) => (
+                                {memberVehicles.map((v) => (
                                   <div key={v.id} className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800">
                                     <span className="text-[11px] font-bold text-zinc-900 dark:text-white flex items-center gap-1">
                                       {v.vehicleType === '2wheeler' ? '🏍️' : '🚗'} {v.vehicleName || (v.vehicleType === '2wheeler' ? 'Two-Wheeler' : 'Four-Wheeler')}
@@ -1735,7 +1744,8 @@ export default function SocietyAdminDashboard() {
                               </div>
                             ) : (
                               <span className="text-zinc-400 italic text-[11px]">No vehicle applied</span>
-                            )}
+                            );
+                            })()}
                           </td>
 
                           <td className="px-4 py-2 text-[11px] text-zinc-500 whitespace-nowrap">
@@ -1827,9 +1837,11 @@ export default function SocietyAdminDashboard() {
                           </span>
                         </div>
 
-                        {m.vehicles && m.vehicles.length > 0 ? (
+                        {(() => {
+                          const memberVehicles = getMemberVehicles(m);
+                          return memberVehicles.length > 0 ? (
                           <div className="space-y-1">
-                            {m.vehicles.map((v) => (
+                            {memberVehicles.map((v) => (
                               <div key={v.id} className="flex items-center justify-between gap-1 p-1 rounded bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 text-xs">
                                 <div>
                                   <div className="font-bold text-zinc-900 dark:text-white text-[11px] flex items-center gap-1">
@@ -1864,7 +1876,8 @@ export default function SocietyAdminDashboard() {
                           </div>
                         ) : (
                           <div className="text-[11px] text-zinc-400 italic">No vehicle applied</div>
-                        )}
+                        );
+                        })()}
                       </div>
 
                       <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-zinc-100 dark:border-zinc-800/80">
@@ -2090,15 +2103,18 @@ export default function SocietyAdminDashboard() {
             </div>
 
             {/* Vehicles Registered by this Member */}
+            {(() => {
+              const selectedMemberVehicles = getMemberVehicles(selectedMember);
+              return (
             <div>
               <div className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Car className="w-3.5 h-3.5" />
-                <span>Registered Vehicles ({selectedMember.vehicles?.length || 0})</span>
+                <span>Registered Vehicles ({selectedMemberVehicles.length})</span>
               </div>
 
-              {selectedMember.vehicles && selectedMember.vehicles.length > 0 ? (
+              {selectedMemberVehicles.length > 0 ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {selectedMember.vehicles.map((veh) => (
+                  {selectedMemberVehicles.map((veh) => (
                     <div key={veh.id} className="p-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-xs">
                       <div>
                         <div className="font-bold text-zinc-900 dark:text-white text-xs flex items-center gap-1.5">
@@ -2151,6 +2167,8 @@ export default function SocietyAdminDashboard() {
                 </div>
               )}
             </div>
+              );
+            })()}
 
             {/* Actions */}
             <div className="pt-2 flex items-center justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800">

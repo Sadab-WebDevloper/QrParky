@@ -236,6 +236,7 @@ const getSocietyMembers = async (req, res, next) => {
       where,
       limit: parseInt(limit, 10),
       offset,
+      distinct: true,
       order: [['createdAt', 'DESC']],
       attributes: { exclude: ['passwordHash', 'refreshTokenHash'] },
       include: [
