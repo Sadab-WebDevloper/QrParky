@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { Society, User, Vehicle } = require('../models');
+const { sequelize, Society, User, Vehicle } = require('../models');
 const { logAudit } = require('../utils/auditLogger');
 const { ROLES } = require('../config/constants');
 
@@ -64,19 +64,27 @@ const registerMember = async (req, res, next) => {
       });
     }
 
-    // Check duplicate vehicle number in society if vehicle details provided
+    // Validate vehicle number for resident parking pass application
     let normalizedVehicleNum = null;
     if (vehicleNumber && vehicleNumber.trim()) {
       normalizedVehicleNum = vehicleNumber.toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
-      const existingVehicle = await Vehicle.findOne({
-        where: { societyId: society.id, vehicleNumber: normalizedVehicleNum },
+    }
+
+    if (!normalizedVehicleNum) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vehicle registration number is required to apply for a resident parking pass.',
       });
-      if (existingVehicle) {
-        return res.status(400).json({
-          success: false,
-          message: `Vehicle number ${normalizedVehicleNum} is already registered in this society.`,
-        });
-      }
+    }
+
+    const existingVehicle = await Vehicle.findOne({
+      where: { societyId: society.id, vehicleNumber: normalizedVehicleNum },
+    });
+    if (existingVehicle) {
+      return res.status(400).json({
+        success: false,
+        message: `Vehicle number ${normalizedVehicleNum} is already registered in this society.`,
+      });
     }
 
     // Validate avatar image if provided
@@ -123,31 +131,52 @@ const registerMember = async (req, res, next) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const user = await User.create({
-      name,
-      email,
-      phone,
-      passwordHash,
-      role: ROLES.MEMBER,
-      societyId: society.id,
-      status: 'pending',
-      avatar: avatar || null,
+    // Atomically create User and Vehicle pass application inside a database transaction
+    const { user, createdVehicle } = await sequelize.transaction(async (t) => {
+      const newUser = await User.create({
+        name,
+        email,
+        phone,
+        passwordHash,
+        role: ROLES.MEMBER,
+        societyId: society.id,
+        status: 'pending',
+        avatar: avatar || null,
+      }, { transaction: t });
+
+      let newVehicle;
+      try {
+        newVehicle = await Vehicle.create({
+          memberId: newUser.id,
+          societyId: society.id,
+          vehicleNumber: normalizedVehicleNum,
+          vehicleName: vehicleName ? vehicleName.trim() : null,
+          vehicleType: vehicleType === '2wheeler' ? '2wheeler' : '4wheeler',
+          passType: 'regular',
+          documents: documents || [],
+          status: 'pending',
+        }, { transaction: t });
+      } catch (vehErr) {
+        // Resilient fallback if remote production DB has not yet added the vehicle_name column
+        if (vehErr.message && vehErr.message.includes('vehicle_name')) {
+          newVehicle = await Vehicle.create({
+            memberId: newUser.id,
+            societyId: society.id,
+            vehicleNumber: normalizedVehicleNum,
+            vehicleType: vehicleType === '2wheeler' ? '2wheeler' : '4wheeler',
+            passType: 'regular',
+            documents: documents || [],
+            status: 'pending',
+          }, { transaction: t });
+        } else {
+          throw vehErr;
+        }
+      }
+
+      return { user: newUser, createdVehicle: newVehicle };
     });
 
-    // Create initial primary vehicle pass application if provided
-    let createdVehicle = null;
-    if (normalizedVehicleNum) {
-      createdVehicle = await Vehicle.create({
-        memberId: user.id,
-        societyId: society.id,
-        vehicleNumber: normalizedVehicleNum,
-        vehicleName: vehicleName ? vehicleName.trim() : null,
-        vehicleType: vehicleType === '2wheeler' ? '2wheeler' : '4wheeler',
-        passType: 'regular',
-        documents: documents || [],
-        status: 'pending',
-      });
-
+    if (createdVehicle) {
       await logAudit({
         actorRole: 'public_member',
         action: 'vehicle_registered',
