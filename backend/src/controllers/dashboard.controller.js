@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Society, User, Vehicle, QRCode, Order, Payment, AuditLog } = require('../models');
+const { Society, User, Vehicle, QRCode, Order, Payment, SupportInquiry } = require('../models');
 const { ROLES } = require('../config/constants');
 
 /**
@@ -36,76 +36,6 @@ const getSuperAdminStats = async (req, res, next) => {
 };
 
 /**
- * Super Admin: Ultra-Lightweight Sync Endpoint
- * Returns tiny footprint to check if new pending society applications exist.
- */
-const getSuperAdminPendingCheck = async (req, res, next) => {
-  try {
-    const [pendingSocietiesCount, latestSociety] = await Promise.all([
-      Society.count({ where: { status: 'pending' } }),
-      Society.findOne({
-        where: { status: 'pending' },
-        order: [['id', 'DESC']],
-        attributes: ['id', 'name', 'createdAt'],
-      }),
-    ]);
-
-    const syncSignature = `${pendingSocietiesCount}_${latestSociety?.id || 0}`;
-
-    res.json({
-      success: true,
-      data: {
-        pendingSocietiesCount,
-        latestSociety: latestSociety ? { id: latestSociety.id, name: latestSociety.name } : null,
-        syncSignature,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Super Admin: Query System Audit Logs
- */
-const getAuditLogs = async (req, res, next) => {
-  try {
-    const { targetType, action, from, to, page = 1, limit = 20 } = req.query;
-    const where = {};
-
-    if (targetType) where.targetType = targetType;
-    if (action) where.action = action;
-
-    if (from || to) {
-      where.createdAt = {};
-      if (from) where.createdAt[Op.gte] = new Date(from);
-      if (to) where.createdAt[Op.lte] = new Date(to);
-    }
-
-    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-    const { count, rows } = await AuditLog.findAndCountAll({
-      where,
-      limit: parseInt(limit, 10),
-      offset,
-      order: [['createdAt', 'DESC']],
-    });
-
-    res.json({
-      success: true,
-      data: rows,
-      meta: {
-        total: count,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        totalPages: Math.ceil(count / limit),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * Society Admin: Dashboard Statistics for their specific society
  */
 const getSocietyAdminStats = async (req, res, next) => {
@@ -126,60 +56,6 @@ const getSocietyAdminStats = async (req, res, next) => {
       data: {
         members: { total: totalMembers, pending: pendingMembers, approved: approvedMembers },
         vehicles: { total: totalVehicles, pending: pendingVehicles, awaitingPayment: awaitingPaymentVehicles, active: activeVehicles },
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Ultra-Lightweight Sync Endpoint: Returns tiny footprint (<50 bytes, ~1ms)
- * to verify if new pending requests exist without querying full lists.
- */
-const getSocietyPendingCheck = async (req, res, next) => {
-  try {
-    const societyId = req.user.societyId;
-    if (!societyId) {
-      return res.status(400).json({ success: false, message: 'Society ID not linked.' });
-    }
-
-    const [pendingMembersCount, pendingVehiclesCount, latestVehicle, latestMember] = await Promise.all([
-      User.count({
-        where: { societyId, role: ROLES.MEMBER, status: 'pending' },
-      }),
-      Vehicle.count({
-        where: { societyId, status: 'pending' },
-      }),
-      Vehicle.findOne({
-        where: { societyId, status: 'pending' },
-        order: [['id', 'DESC']],
-        include: [{ model: User, as: 'owner', attributes: ['name'] }],
-        attributes: ['id', 'vehicleNumber', 'vehicleName', 'vehicleType', 'createdAt'],
-      }),
-      User.findOne({
-        where: { societyId, role: ROLES.MEMBER, status: 'pending' },
-        order: [['id', 'DESC']],
-        attributes: ['id', 'name', 'createdAt'],
-      }),
-    ]);
-
-    const syncSignature = `${pendingMembersCount}_${pendingVehiclesCount}_${latestMember?.id || 0}_${latestVehicle?.id || 0}`;
-
-    res.json({
-      success: true,
-      data: {
-        pendingMembersCount,
-        pendingVehiclesCount,
-        latestMember: latestMember ? { id: latestMember.id, name: latestMember.name } : null,
-        latestVehicle: latestVehicle ? {
-          id: latestVehicle.id,
-          vehicleNumber: latestVehicle.vehicleNumber,
-          vehicleName: latestVehicle.vehicleName,
-          vehicleType: latestVehicle.vehicleType,
-          ownerName: latestVehicle.owner?.name,
-        } : null,
-        syncSignature,
       },
     });
   } catch (error) {
@@ -291,34 +167,6 @@ const getSocietyAdminInit = async (req, res, next) => {
   }
 };
 
-/**
- * Society Admin: Query Audit Logs pertaining to their society
- */
-const getSocietyAuditLogs = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-
-    const { count, rows } = await AuditLog.findAndCountAll({
-      limit: parseInt(limit, 10),
-      offset,
-      order: [['createdAt', 'DESC']],
-    });
-
-    res.json({
-      success: true,
-      data: rows,
-      meta: {
-        total: count,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        totalPages: Math.ceil(count / limit),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 /**
  * Super Admin: Get All Users across the entire system with server-side pagination & filtering
@@ -388,42 +236,34 @@ const getSupportFeedback = async (req, res, next) => {
     const limitNum = parseInt(limit, 10) || 10;
     const offset = (pageNum - 1) * limitNum;
 
-    const { count, rows } = await AuditLog.findAndCountAll({
-      where: { targetType: 'feedback' },
+    const where = {};
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      where[Op.or] = [
+        { name: { [Op.like]: q } },
+        { emailOrPhone: { [Op.like]: q } },
+        { category: { [Op.like]: q } },
+        { message: { [Op.like]: q } },
+      ];
+    }
+
+    const { count, rows } = await SupportInquiry.findAndCountAll({
+      where,
       limit: limitNum,
       offset,
       order: [['createdAt', 'DESC']],
     });
 
-    let items = rows.map((r) => {
-      let meta = {};
-      try {
-        meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {});
-      } catch (e) {
-        meta = typeof r.metadata === 'object' && r.metadata !== null ? r.metadata : {};
-      }
-      return {
-        id: r.id,
-        name: meta.name || 'Anonymous',
-        emailOrPhone: meta.emailOrPhone || 'N/A',
-        category: meta.category || 'general',
-        message: meta.message || '',
-        createdAt: r.createdAt,
-      };
-    });
+    const items = rows.map((r) => ({
+      id: r.id,
+      name: r.name || 'Anonymous',
+      emailOrPhone: r.emailOrPhone || 'N/A',
+      category: r.category || 'general',
+      message: r.message || '',
+      createdAt: r.createdAt,
+    }));
 
-    if (search && search.trim()) {
-      const q = search.trim().toLowerCase();
-      items = items.filter(
-        (it) =>
-          (it.name && it.name.toLowerCase().includes(q)) ||
-          (it.emailOrPhone && it.emailOrPhone.toLowerCase().includes(q)) ||
-          (it.category && it.category.toLowerCase().includes(q)) ||
-          (it.message && it.message.toLowerCase().includes(q))
-      );
-    }
-
-    const totalCount = search && search.trim() ? items.length : (count || 0);
+    const totalCount = count || 0;
 
     res.json({
       success: true,
@@ -643,13 +483,9 @@ const getAdminPayments = async (req, res, next) => {
 
 module.exports = {
   getSuperAdminStats,
-  getSuperAdminPendingCheck,
-  getAuditLogs,
   getAllUsers,
   getSocietyAdminStats,
-  getSocietyPendingCheck,
   getSocietyAdminInit,
-  getSocietyAuditLogs,
   getSupportFeedback,
   getAdminPayments,
 };

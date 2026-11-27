@@ -1,8 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
-const { sequelize, Society, User } = require('../models');
+const { sequelize, Society, User, SupportInquiry } = require('../models');
 const { generateRandomToken } = require('../utils/cryptoUtils');
-const { logAudit } = require('../utils/auditLogger');
 const { ROLES } = require('../config/constants');
 const {
   sendSocietyApplicationReceivedEmail,
@@ -79,14 +78,6 @@ const applySociety = async (req, res, next) => {
       status: 'pending',
     });
 
-    await logAudit({
-      actorRole: 'public_visitor',
-      action: 'society_applied',
-      targetType: 'society',
-      targetId: society.id,
-      metadata: { name, submittedByEmail: submittedBy.email },
-    });
-
     // Send Application Received Email (Async, non-blocking)
     sendSocietyApplicationReceivedEmail({
       applicantEmail: submittedBy.email,
@@ -137,12 +128,12 @@ const getSocieties = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: rows,
+      data: rows || [],
       meta: {
-        total: count,
+        total: count || 0,
         page: pageNum,
         limit: limitNum,
-        totalPages: Math.ceil(count / limitNum),
+        totalPages: Math.ceil((count || 0) / limitNum) || 1,
       },
     });
   } catch (error) {
@@ -223,15 +214,6 @@ const approveSociety = async (req, res, next) => {
       inviteLinkExpiry,
     }, { transaction: t });
 
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'society_approved',
-      targetType: 'society',
-      targetId: society.id,
-      metadata: { adminUserId: adminUser.id, adminEmail: email },
-    }, t);
-
     await t.commit();
 
     // Send Approval Email with Login Credentials and Member Invite Link (Non-blocking)
@@ -280,15 +262,6 @@ const rejectSociety = async (req, res, next) => {
       status: 'rejected',
     });
 
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'society_rejected',
-      targetType: 'society',
-      targetId: society.id,
-      metadata: { reason },
-    });
-
     // Send Rejection Email (Non-blocking)
     if (society.submittedBy && society.submittedBy.email) {
       sendSocietyRejectedEmail({
@@ -311,11 +284,15 @@ const rejectSociety = async (req, res, next) => {
 const getOrRotateInviteLink = async (req, res, next) => {
   try {
     const { rotate } = req.query;
-    const societyId = req.user.societyId || req.params.id;
+    const societyId = req.user.societyId || (req.params.id !== 'me' ? req.params.id : null);
+
+    if (!societyId) {
+      return res.json({ success: true, data: null });
+    }
 
     const society = await Society.findByPk(societyId);
     if (!society) {
-      return res.status(404).json({ success: false, message: 'Society not found.' });
+      return res.json({ success: true, data: null });
     }
 
     if (rotate === 'true' || !society.inviteLinkToken) {
@@ -325,14 +302,6 @@ const getOrRotateInviteLink = async (req, res, next) => {
       await society.update({ inviteLinkToken, inviteLinkExpiry });
       society.inviteLinkToken = inviteLinkToken;
       society.inviteLinkExpiry = inviteLinkExpiry;
-
-      await logAudit({
-        actorId: req.user.id,
-        actorRole: req.user.role,
-        action: 'invite_link_rotated',
-        targetType: 'society',
-        targetId: society.id,
-      });
     } else if (!society.inviteLinkExpiry) {
       // Ensure existing societies without expiry date have 1 year from approval/creation
       const inviteLinkExpiry = new Date(new Date(society.approvedAt || society.createdAt || Date.now()).getTime() + 365 * 24 * 60 * 60 * 1000);
@@ -361,11 +330,11 @@ const submitFeedback = async (req, res, next) => {
   try {
     const { name, emailOrPhone, category, message } = req.body;
 
-    await logAudit({
-      actorRole: 'public_visitor',
-      action: 'feedback_submitted',
-      targetType: 'feedback',
-      metadata: { name, emailOrPhone, category, message },
+    await SupportInquiry.create({
+      name: name || 'Anonymous',
+      emailOrPhone: emailOrPhone || 'N/A',
+      category: category || 'general',
+      message,
     });
 
     // Send SMTP notification asynchronously

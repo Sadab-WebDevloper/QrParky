@@ -3,7 +3,6 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const config = require('../config/env');
 const { User, Society } = require('../models');
-const { logAudit } = require('../utils/auditLogger');
 const { sendPasswordResetEmail } = require('../utils/emailService');
 const { recordSuspiciousAttempt } = require('../middleware/rateLimiter');
 const logger = require('../utils/logger');
@@ -40,13 +39,6 @@ const login = async (req, res, next) => {
 
     if (!user) {
       await recordSuspiciousAttempt(ip, { email, reason: 'unknown_user_attempt' });
-      await logAudit({
-        actorRole: 'unauthenticated',
-        action: 'login_failed_unknown_email',
-        targetType: 'user',
-        metadata: { email, ip },
-        ipAddress: ip,
-      });
       return res.status(401).json({ success: false, message: 'Invalid credentials.' });
     }
 
@@ -54,15 +46,6 @@ const login = async (req, res, next) => {
     if (user.lockUntil && new Date() < new Date(user.lockUntil)) {
       const minutesRemaining = Math.ceil((new Date(user.lockUntil) - new Date()) / 60000);
       await recordSuspiciousAttempt(ip, { userId: user.id, email, reason: 'attempt_while_locked' });
-      await logAudit({
-        actorId: user.id,
-        actorRole: user.role,
-        action: 'malicious_activity_locked_login_attempt',
-        targetType: 'user',
-        targetId: user.id,
-        metadata: { minutesRemaining, ip },
-        ipAddress: ip,
-      });
 
       return res.status(423).json({
         success: false,
@@ -89,15 +72,6 @@ const login = async (req, res, next) => {
 
       if (willLock) {
         logger.warn(`[SECURITY ALERT] Account locked for user: ${user.email} (IP: ${ip}) due to ${attempts} failed attempts.`);
-        await logAudit({
-          actorId: user.id,
-          actorRole: user.role,
-          action: 'account_locked_suspicious_activity',
-          targetType: 'user',
-          targetId: user.id,
-          metadata: { failedAttempts: attempts, lockedUntil: lockUntil, ip },
-          ipAddress: ip,
-        });
 
         return res.status(423).json({
           success: false,
@@ -109,15 +83,6 @@ const login = async (req, res, next) => {
       }
 
       const remainingAttempts = MAX_FAILED_ATTEMPTS - attempts;
-      await logAudit({
-        actorId: user.id,
-        actorRole: user.role,
-        action: 'login_failed',
-        targetType: 'user',
-        targetId: user.id,
-        metadata: { failedAttempts: attempts, remainingAttempts, ip },
-        ipAddress: ip,
-      });
 
       return res.status(401).json({
         success: false,
@@ -146,15 +111,6 @@ const login = async (req, res, next) => {
     const { accessToken, refreshToken } = generateTokens(user);
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     await user.update({ refreshTokenHash });
-
-    await logAudit({
-      actorId: user.id,
-      actorRole: user.role,
-      action: 'user_login',
-      targetType: 'user',
-      targetId: user.id,
-      ipAddress: ip,
-    });
 
     res.json({
       success: true,
@@ -220,13 +176,6 @@ const logout = async (req, res, next) => {
   try {
     if (req.user) {
       await req.user.update({ refreshTokenHash: null });
-      await logAudit({
-        actorId: req.user.id,
-        actorRole: req.user.role,
-        action: 'user_logout',
-        targetType: 'user',
-        targetId: req.user.id,
-      });
     }
     res.json({ success: true, message: 'Logged out successfully.' });
   } catch (error) {
@@ -271,16 +220,6 @@ const forgotPassword = async (req, res, next) => {
     await user.update({
       passwordResetToken: resetToken,
       passwordResetExpiry: resetExpiry,
-    });
-
-    await logAudit({
-      actorId: user.id,
-      actorRole: user.role,
-      action: 'password_reset_requested',
-      targetType: 'user',
-      targetId: user.id,
-      metadata: { ip },
-      ipAddress: ip,
     });
 
     // Send reset email non-blocking
@@ -336,16 +275,6 @@ const resetPassword = async (req, res, next) => {
       failedLoginAttempts: 0,
       lockUntil: null,
       refreshTokenHash: null,
-    });
-
-    await logAudit({
-      actorId: user.id,
-      actorRole: user.role,
-      action: 'password_reset_success',
-      targetType: 'user',
-      targetId: user.id,
-      metadata: { ip },
-      ipAddress: ip,
     });
 
     res.json({

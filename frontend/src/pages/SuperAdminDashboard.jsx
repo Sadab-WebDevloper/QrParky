@@ -120,106 +120,12 @@ export default function SuperAdminDashboard() {
     submitting: false
   });
 
-  // Live Alert & Unread Applications Notification Tracking
-  const [hasUnreadApplications, setHasUnreadApplications] = useState(false);
-  const [liveAlert, setLiveAlert] = useState(null);
-  const lastSignatureRef = useRef(null);
-  const prevPendingCountRef = useRef(0);
-  const tabRef = useRef(tab);
-
-  useEffect(() => {
-    tabRef.current = tab;
-  }, [tab]);
-
-  // Synthesize gentle notification chime without external file dependency
-  const playNotificationChime = () => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Note D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // Note A5
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.45);
-    } catch (e) {
-      // Audio autoplay policy guard
-    }
-  };
-
-  // Ultra-lightweight background sync for new society registration requests
-  const pollForNewRequests = async () => {
-    if (typeof document !== 'undefined' && document.hidden) return;
-
-    try {
-      const checkRes = await API.get('/admin/pending-check').catch(() => null);
-      if (!checkRes || !checkRes.data?.success || !checkRes.data?.data) return;
-
-      const { pendingSocietiesCount, latestSociety, syncSignature } = checkRes.data.data;
-
-      // Zero work if signature has not changed on server
-      if (lastSignatureRef.current === syncSignature) {
-        return;
-      }
-
-      // Check if pending count increased (new incoming society application)
-      const hasNewRequest =
-        pendingSocietiesCount > prevPendingCountRef.current;
-
-      if (hasNewRequest && lastSignatureRef.current !== null) {
-        playNotificationChime();
-        const societyName = latestSociety?.name || 'New Society';
-
-        setLiveAlert({
-          id: Date.now(),
-          name: societyName,
-          count: pendingSocietiesCount,
-          timestamp: new Date(),
-        });
-
-        toast.info(
-          `🔔 New Society Application: "${societyName}" has submitted for registration!`
-        );
-
-        // Show badge until super admin explicitly opens pending applications tab
-        setHasUnreadApplications(true);
-      }
-
-      lastSignatureRef.current = syncSignature;
-      prevPendingCountRef.current = pendingSocietiesCount;
-
-      // Refresh stats
-      fetchStats();
-
-      // If already viewing applications tab, also refresh list directly
-      if (tabRef.current === 'applications') {
-        fetchTabData();
-      }
-    } catch (err) {
-      // Silent error for background fail-safe
-    }
-  };
-
   // Fetch Stats once on load or manual refresh
   const fetchStats = async () => {
     try {
       const statsRes = await API.get('/admin/dashboard/stats');
       if (statsRes.data?.success) {
         setStats(statsRes.data.data);
-        const pending = statsRes.data.data?.societies?.pending || 0;
-        if (lastSignatureRef.current === null) {
-          prevPendingCountRef.current = pending;
-          lastSignatureRef.current = `${pending}_init`;
-          if (pending > 0 && tabRef.current !== 'applications') {
-            setHasUnreadApplications(true);
-          }
-        }
       }
     } catch (err) {
       // silently fallback
@@ -305,23 +211,6 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     fetchStats();
-
-    // Background polling interval (10s) with browser visibility protection
-    const interval = setInterval(() => {
-      pollForNewRequests();
-    }, 10000);
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        pollForNewRequests();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, []);
 
   // Re-fetch when tab, page, or filters change
@@ -343,10 +232,6 @@ export default function SuperAdminDashboard() {
   }, [searchQuery]);
 
   const handleTabChange = (newTab) => {
-    if (newTab === 'applications') {
-      setHasUnreadApplications(false);
-      setLiveAlert(null);
-    }
     if (newTab === tab) return;
     setTab(newTab);
     setPage(1);
@@ -438,33 +323,6 @@ export default function SuperAdminDashboard() {
           <span>Super Admin</span>
         </div>
       </div>
-
-      {/* Live Society Application Alert Banner */}
-      {liveAlert && (
-        <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 shadow-sm animate-toast-in">
-          <div className="flex items-center gap-2 text-xs font-semibold">
-            <span className="flex h-2 w-2 relative shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span>🔔 <strong>New Society Application:</strong> &ldquo;{liveAlert.name}&rdquo; has submitted for registration!</span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => { handleTabChange('applications'); setLiveAlert(null); }}
-              className="px-2.5 py-1 rounded-lg bg-amber-500 text-zinc-950 text-xs font-black hover:bg-amber-400 transition-all cursor-pointer shadow-xs active:scale-95"
-            >
-              Review Now →
-            </button>
-            <button
-              onClick={() => setLiveAlert(null)}
-              className="p-1 rounded-lg hover:bg-amber-500/20 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
       
       {/* Stats Grid — Compact low-profile cards */}
       {stats && (
@@ -599,14 +457,9 @@ export default function SuperAdminDashboard() {
           >
             <Clock className={`w-3.5 h-3.5 shrink-0 ${tab === 'applications' ? 'text-zinc-950' : 'text-zinc-400'}`} />
             <span className="truncate">Pending Applications</span>
-            {hasUnreadApplications ? (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black bg-amber-400 text-zinc-950 border border-amber-300 shadow-sm animate-pulse shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping shrink-0" />
-                <span>{stats?.societies?.pending ? `${stats.societies.pending} NEW` : 'NEW'}</span>
-              </span>
-            ) : stats?.societies?.pending > 0 && tab !== 'applications' ? (
+            {stats?.societies?.pending > 0 && tab !== 'applications' && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-            ) : null}
+            )}
           </button>
 
           {/* Tab 2: All Societies */}

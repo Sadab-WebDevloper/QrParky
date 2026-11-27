@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { connectDB, sequelize } = require('./config/db');
-const { User, Society, Vehicle, Order, Payment, QRCode, AuditLog } = require('./models');
+const { User, Society, Vehicle, Order, Payment, QRCode, SupportInquiry } = require('./models');
 const { ROLES } = require('./config/constants');
 const logger = require('./utils/logger');
 
@@ -16,7 +16,7 @@ const cleanAndSeedSuperAdminOnly = async () => {
     await Payment.destroy({ where: {}, truncate: true, force: true });
     await Order.destroy({ where: {}, truncate: true, force: true });
     await Vehicle.destroy({ where: {}, truncate: true, force: true });
-    await AuditLog.destroy({ where: {}, truncate: true, force: true });
+    await SupportInquiry.destroy({ where: {}, truncate: true, force: true });
     await Society.destroy({ where: {}, truncate: true, force: true });
     await User.destroy({ where: {}, truncate: true, force: true });
 

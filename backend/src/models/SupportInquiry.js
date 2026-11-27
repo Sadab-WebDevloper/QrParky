@@ -1,41 +1,36 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 
-const AuditLog = sequelize.define('AuditLog', {
+const SupportInquiry = sequelize.define('SupportInquiry', {
   id: {
     type: DataTypes.INTEGER,
     autoIncrement: true,
     primaryKey: true,
   },
-  actorId: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-  },
-  actorRole: {
-    type: DataTypes.STRING,
-    allowNull: true,
-  },
-  action: {
+  name: {
     type: DataTypes.STRING,
     allowNull: false,
+    defaultValue: 'Anonymous',
   },
-  targetType: {
+  emailOrPhone: {
     type: DataTypes.STRING,
     allowNull: false,
+    defaultValue: 'N/A',
   },
-  targetId: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
+  category: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'general',
   },
-  metadata: {
-    type: DataTypes.JSON,
-    allowNull: true,
+  message: {
+    type: DataTypes.TEXT,
+    allowNull: false,
   },
 }, {
-  tableName: 'audit_logs',
+  tableName: 'support_inquiries',
   timestamps: true,
   updatedAt: false,
   paranoid: false,
 });
 
-module.exports = AuditLog;
+module.exports = SupportInquiry;

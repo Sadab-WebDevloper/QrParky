@@ -1,6 +1,5 @@
 const bcrypt = require('bcryptjs');
 const { sequelize, Society, User, Vehicle } = require('../models');
-const { logAudit } = require('../utils/auditLogger');
 const { ROLES } = require('../config/constants');
 
 /**
@@ -176,24 +175,6 @@ const registerMember = async (req, res, next) => {
       return { user: newUser, createdVehicle: newVehicle };
     });
 
-    if (createdVehicle) {
-      await logAudit({
-        actorRole: 'public_member',
-        action: 'vehicle_registered',
-        targetType: 'vehicle',
-        targetId: createdVehicle.id,
-        metadata: { vehicleNumber: normalizedVehicleNum, societyId: society.id, memberId: user.id },
-      });
-    }
-
-    await logAudit({
-      actorRole: 'public_member',
-      action: 'member_registered',
-      targetType: 'user',
-      targetId: user.id,
-      metadata: { societyId: society.id, email, vehicleNumber: normalizedVehicleNum },
-    });
-
     res.status(201).json({
       success: true,
       message: 'Registration and vehicle pass application submitted successfully! Pending Society Admin approval.',
@@ -231,10 +212,12 @@ const getSocietyMembers = async (req, res, next) => {
     };
     if (status) where.status = status;
 
-    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 50;
+    const offset = (pageNum - 1) * limitNum;
     const { count, rows } = await User.findAndCountAll({
       where,
-      limit: parseInt(limit, 10),
+      limit: limitNum,
       offset,
       distinct: true,
       order: [['createdAt', 'DESC']],
@@ -251,12 +234,12 @@ const getSocietyMembers = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: rows,
+      data: rows || [],
       meta: {
-        total: count,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        totalPages: Math.ceil(count / limit),
+        total: count || 0,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil((count || 0) / limitNum) || 1,
       },
     });
   } catch (error) {
@@ -280,14 +263,6 @@ const approveMember = async (req, res, next) => {
 
     await member.update({ status: 'approved' });
 
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'member_approved',
-      targetType: 'user',
-      targetId: member.id,
-    });
-
     res.json({ success: true, message: 'Member approved successfully.', data: member });
   } catch (error) {
     next(error);
@@ -310,14 +285,6 @@ const rejectMember = async (req, res, next) => {
     }
 
     await member.update({ status: action });
-
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: `member_${action}`,
-      targetType: 'user',
-      targetId: member.id,
-    });
 
     res.json({ success: true, message: `Member ${action} successfully.` });
   } catch (error) {

@@ -5,7 +5,7 @@ const Vehicle = require('./Vehicle');
 const QRCode = require('./QRCode');
 const Order = require('./Order');
 const Payment = require('./Payment');
-const AuditLog = require('./AuditLog');
+const SupportInquiry = require('./SupportInquiry');
 
 // Model Associations
 // Society -> Users
@@ -44,5 +44,5 @@ module.exports = {
   QRCode,
   Order,
   Payment,
-  AuditLog,
+  SupportInquiry,
 };

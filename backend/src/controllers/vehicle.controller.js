@@ -1,7 +1,6 @@
 const { Vehicle, QRCode, User, Society } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/cryptoUtils');
 const { generateQRDataUrl } = require('../utils/qrGenerator');
-const { logAudit } = require('../utils/auditLogger');
 const { sendPremiumPassNotificationToSuperAdmin } = require('../utils/emailService');
 const config = require('../config/env');
 const { ROLES } = require('../config/constants');
@@ -41,15 +40,6 @@ const createVehicle = async (req, res, next) => {
       passType: passType === 'professional' ? 'professional' : 'regular',
       documents,
       status: 'pending',
-    });
-
-    await logAudit({
-      actorId: memberId,
-      actorRole: req.user.role,
-      action: 'vehicle_registered',
-      targetType: 'vehicle',
-      targetId: vehicle.id,
-      metadata: { vehicleNumber: normalizedNum, vehicleType, passType },
     });
 
     // If member chose Professional (Premium) pass, notify Super Admin immediately
@@ -113,10 +103,12 @@ const getSocietyVehicles = async (req, res, next) => {
     const where = { societyId };
     if (status) where.status = status;
 
-    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * limitNum;
     const { count, rows } = await Vehicle.findAndCountAll({
       where,
-      limit: parseInt(limit, 10),
+      limit: limitNum,
       offset,
       order: [['createdAt', 'DESC']],
       include: [
@@ -127,12 +119,12 @@ const getSocietyVehicles = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: rows,
+      data: rows || [],
       meta: {
-        total: count,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        totalPages: Math.ceil(count / limit),
+        total: count || 0,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil((count || 0) / limitNum) || 1,
       },
     });
   } catch (error) {
@@ -203,15 +195,6 @@ const approveVehicle = async (req, res, next) => {
       reviewedAt: new Date(),
     });
 
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'vehicle_approved_awaiting_payment',
-      targetType: 'vehicle',
-      targetId: vehicle.id,
-      metadata: { status: 'awaiting_payment', fee: vehicle.vehicleType === '2wheeler' ? 199 : 299 },
-    });
-
     return res.json({
       success: true,
       message: `Vehicle approved by Committee! Member must pay ${vehicle.vehicleType === '2wheeler' ? '₹199' : '₹299'} pass fee to unlock & download the pass.`,
@@ -241,15 +224,6 @@ const rejectVehicle = async (req, res, next) => {
       status: 'rejected',
       reviewedBy: req.user.id,
       reviewedAt: new Date(),
-    });
-
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'vehicle_rejected',
-      targetType: 'vehicle',
-      targetId: vehicle.id,
-      metadata: { reason },
     });
 
     res.json({ success: true, message: 'Vehicle rejected.', data: vehicle });
@@ -357,15 +331,6 @@ const suspendVehiclePass = async (req, res, next) => {
       suspensionReason,
     });
 
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'vehicle_pass_suspended',
-      targetType: 'vehicle',
-      targetId: id,
-      metadata: { reason: suspensionReason },
-    });
-
     res.json({
       success: true,
       message: 'Vehicle pass temporarily suspended. Resident will see the reason.',
@@ -400,14 +365,6 @@ const reactivateVehiclePass = async (req, res, next) => {
     await vehicle.update({
       status: 'active',
       suspensionReason: null,
-    });
-
-    await logAudit({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'vehicle_pass_reactivated',
-      targetType: 'vehicle',
-      targetId: id,
     });
 
     res.json({

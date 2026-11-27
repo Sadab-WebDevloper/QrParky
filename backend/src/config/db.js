@@ -61,8 +61,8 @@ const ensureUserSecurityColumns = async () => {
     const [columns] = await sequelize.query(`
       SELECT COLUMN_NAME 
       FROM information_schema.COLUMNS 
-      WHERE TABLE_SCHEMA = :dbName AND TABLE_NAME = 'users';
-    `, { replacements: { dbName: config.db.name } });
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users';
+    `);
 
     const columnNames = columns.map(c => c.COLUMN_NAME.toLowerCase());
 
@@ -90,8 +90,8 @@ const ensureUserSecurityColumns = async () => {
     const [vehicleCols] = await sequelize.query(`
       SELECT COLUMN_NAME 
       FROM information_schema.COLUMNS 
-      WHERE TABLE_SCHEMA = :dbName AND TABLE_NAME = 'vehicles';
-    `, { replacements: { dbName: config.db.name } });
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vehicles';
+    `);
     const vehicleColNames = vehicleCols.map(c => c.COLUMN_NAME.toLowerCase());
     if (!vehicleColNames.includes('vehicle_name')) {
       await sequelize.query('ALTER TABLE vehicles ADD COLUMN vehicle_name VARCHAR(100) NULL;');

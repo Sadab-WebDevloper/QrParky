@@ -89,36 +89,6 @@ export default function SocietyAdminDashboard() {
     submitting: false
   });
 
-  // In-App Live Notification States & Tracking (Ultra-low footprint)
-  const [liveAlert, setLiveAlert] = useState(null);
-  const lastSignatureRef = useRef(null);
-  const prevCountsRef = useRef({ members: 0, vehicles: 0 });
-
-  // Synthesize gentle notification chime without external file dependency
-  const playNotificationChime = () => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Note D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // Note A5
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.45);
-    } catch (e) {
-      // Audio autoplay policy guard
-    }
-  };
-
   // Update sliding indicator on tab change & window resize
   useEffect(() => {
     const updateIndicator = () => {
@@ -161,19 +131,11 @@ export default function SocietyAdminDashboard() {
       const initRes = await API.get('/society-admin/dashboard/init').catch(() => null);
 
       if (initRes && initRes.data?.success && initRes.data?.data) {
-        const { stats, members, vehicles, inviteLink, pendingCheck } = initRes.data.data;
+        const { stats, members, vehicles, inviteLink } = initRes.data.data;
         setStats(stats);
         setMembers(members || []);
         setVehicles(vehicles || []);
         setInviteLink(inviteLink);
-
-        if (pendingCheck) {
-          lastSignatureRef.current = pendingCheck.syncSignature;
-          prevCountsRef.current = {
-            members: pendingCheck.pendingMembersCount || 0,
-            vehicles: pendingCheck.pendingVehiclesCount || 0,
-          };
-        }
       } else {
         // Fallback for older server deployments
         const [statsRes, membersRes, vehiclesRes, inviteRes] = await Promise.all([
@@ -190,15 +152,6 @@ export default function SocietyAdminDashboard() {
         if (membersRes.data?.success) setMembers(loadedMembers);
         if (vehiclesRes.data?.success) setVehicles(loadedVehicles);
         if (inviteRes.data?.success) setInviteLink(inviteRes.data.data);
-
-        // Initialize sync signature directly from loaded data
-        const pendingMems = loadedMembers.filter(m => m.status === 'pending' && m.role !== 2);
-        const pendingVechs = loadedVehicles.filter(v => v.status === 'pending');
-        prevCountsRef.current = {
-          members: pendingMems.length,
-          vehicles: pendingVechs.length,
-        };
-        lastSignatureRef.current = `${pendingMems.length}_${pendingVechs.length}_${pendingMems[0]?.id || 0}_${pendingVechs[0]?.id || 0}`;
       }
     } catch (err) {
       toast.error('Failed to load society admin dashboard data.');
@@ -207,95 +160,8 @@ export default function SocietyAdminDashboard() {
     }
   };
 
-  // Ultra-lightweight background sync (consumes <50 bytes and ~1ms query per check)
-  const pollForNewRequests = async () => {
-    // 1. Tab Visibility Guard: Pause completely when browser tab is inactive/minimized
-    if (typeof document !== 'undefined' && document.hidden) {
-      return;
-    }
-
-    try {
-      // 2. Micro-check endpoint (safely caught in case live backend hasn't restarted yet)
-      const checkRes = await API.get('/society-admin/pending-check').catch(() => null);
-      if (!checkRes || !checkRes.data?.success || !checkRes.data?.data) return;
-
-      const { pendingMembersCount, pendingVehiclesCount, latestMember, latestVehicle, syncSignature } = checkRes.data.data;
-
-      // 3. ZERO WORK if nothing has changed on server
-      if (lastSignatureRef.current === syncSignature) {
-        return;
-      }
-
-      // Check if counts increased (new incoming request)
-      const isNewMember = pendingMembersCount > prevCountsRef.current.members;
-      const isNewVehicle = pendingVehiclesCount > prevCountsRef.current.vehicles;
-      const hasNewRequest = isNewMember || isNewVehicle;
-
-      if (hasNewRequest && lastSignatureRef.current !== null) {
-        playNotificationChime();
-
-        const applicantName = latestMember?.name || latestVehicle?.ownerName || 'New Resident';
-        const plateNumber = latestVehicle?.vehicleNumber || '';
-        const vehicleName = latestVehicle?.vehicleName || '';
-        const totalNew = pendingMembersCount + pendingVehiclesCount;
-
-        setLiveAlert({
-          id: Date.now(),
-          name: applicantName,
-          vehicleName: vehicleName,
-          vehicleNumber: plateNumber,
-          count: totalNew,
-          targetTab: isNewMember ? 'members' : 'vehicles',
-          timestamp: new Date(),
-        });
-
-        const vehicleDesc = vehicleName && plateNumber ? `${vehicleName} (${plateNumber})` : (plateNumber || vehicleName || '');
-        toast.info(
-          `🔔 New Request: ${applicantName} has applied ${vehicleDesc ? `with ${vehicleDesc}` : 'for society registration'}!`
-        );
-      }
-
-      // Update cached signature and counts
-      lastSignatureRef.current = syncSignature;
-      prevCountsRef.current = {
-        members: pendingMembersCount,
-        vehicles: pendingVehiclesCount,
-      };
-
-      // 4. ONLY fetch full lists when a verified change is detected
-      const [membersRes, vehiclesRes, statsRes] = await Promise.all([
-        API.get('/society-admin/members?limit=100'),
-        API.get('/society-admin/vehicles'),
-        API.get('/society-admin/dashboard/stats'),
-      ]);
-
-      if (membersRes.data?.success) setMembers(membersRes.data.data || []);
-      if (vehiclesRes.data?.success) setVehicles(vehiclesRes.data.data || []);
-      if (statsRes.data?.success) setStats(statsRes.data.data);
-    } catch (err) {
-      // Silent error for background fail-safe
-    }
-  };
-
   useEffect(() => {
     fetchData();
-
-    // Fast, responsive polling interval (8s) with tab visibility protection
-    const interval = setInterval(() => {
-      pollForNewRequests();
-    }, 8000);
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        pollForNewRequests();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, []);
 
   // Member Actions
@@ -882,71 +748,12 @@ export default function SocietyAdminDashboard() {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* In-App Live Notification Bell with Pending Counter */}
-          <button
-            onClick={() => {
-              if ((stats?.members?.pending || 0) > 0) {
-                setActiveTab('members');
-                setMemberFilter('pending');
-              } else if ((stats?.vehicles?.pending || 0) > 0) {
-                setActiveTab('vehicles');
-                setVehicleFilter('pending');
-              } else {
-                toast.info('No pending resident requests at this time.');
-              }
-            }}
-            className="relative h-8 px-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-            title="In-App Notifications / Pending Requests"
-          >
-            <BellRing className={`w-3.5 h-3.5 ${((stats?.members?.pending || 0) + (stats?.vehicles?.pending || 0)) > 0 ? 'text-amber-500 animate-pulse' : 'text-zinc-400'}`} />
-            <span className="hidden sm:inline">Requests</span>
-            {((stats?.members?.pending || 0) + (stats?.vehicles?.pending || 0)) > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono font-bold text-[10px] shadow-xs animate-bounce">
-                {(stats?.members?.pending || 0) + (stats?.vehicles?.pending || 0)}
-              </span>
-            )}
-          </button>
-
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold">
             <Shield className="w-3.5 h-3.5" />
             <span>{user?.societyName || 'Society Admin'}</span>
           </div>
         </div>
       </div>
-
-      {/* Live Notification Alert Banner */}
-      {liveAlert && (
-        <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-amber-500 text-zinc-950 flex items-center justify-center font-black shrink-0 shadow-xs">
-              <BellRing className="w-3.5 h-3.5 animate-bounce" />
-            </div>
-            <div className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-              <span className="font-bold text-amber-600 dark:text-amber-400">{liveAlert.name}</span> has submitted a new request {liveAlert.vehicleNumber && <span>with <span className="font-semibold text-zinc-900 dark:text-white">{liveAlert.vehicleName ? `${liveAlert.vehicleName} ` : ''}</span><span className="font-mono font-bold text-amber-600 dark:text-amber-400">({liveAlert.vehicleNumber})</span></span>}!
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => {
-                setActiveTab(liveAlert.targetTab);
-                if (liveAlert.targetTab === 'vehicles') setVehicleFilter('pending');
-                if (liveAlert.targetTab === 'members') setMemberFilter('pending');
-                setLiveAlert(null);
-              }}
-              className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs transition"
-            >
-              <span>Review Request</span>
-              <ChevronRight className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => setLiveAlert(null)}
-              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer transition"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Stats Grid — Compact low-profile cards matching Super Admin */}
       {stats && (

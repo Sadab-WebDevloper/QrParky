@@ -1,6 +1,5 @@
 const rateLimit = require('express-rate-limit');
 const logger = require('../utils/logger');
-const { logAudit } = require('../utils/auditLogger');
 
 // In-memory tracker for malicious IPs (e.g. distributed brute force across accounts)
 const maliciousIpMap = new Map();
@@ -52,14 +51,6 @@ const recordSuspiciousAttempt = async (ip, metadata = {}) => {
   if (record.count >= 8) {
     record.bannedUntil = new Date(now + 30 * 60 * 1000); // 30 mins ban
     logger.error(`[SECURITY THREAT] Malicious brute-force attack detected from IP: ${ip}. Banned for 30 minutes.`);
-
-    logAudit({
-      actorRole: 'malicious_actor',
-      action: 'ip_banned_brute_force',
-      targetType: 'security',
-      metadata: { ip, attemptCount: record.count, ...metadata },
-      ipAddress: ip,
-    }).catch(() => {});
   }
 
   maliciousIpMap.set(ip, record);

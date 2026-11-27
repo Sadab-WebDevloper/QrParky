@@ -2,7 +2,6 @@ const { sequelize, Order, Payment, Vehicle, QRCode, User, Society } = require('.
 const { createRazorpayOrder, verifyWebhookSignature, verifyPaymentSignature } = require('../utils/razorpay');
 const { encryptPayload } = require('../utils/cryptoUtils');
 const { generateQRDataUrl } = require('../utils/qrGenerator');
-const { logAudit } = require('../utils/auditLogger');
 const { sendPremiumPassNotificationToSuperAdmin } = require('../utils/emailService');
 const logger = require('../utils/logger');
 const config = require('../config/env');
@@ -76,15 +75,6 @@ const createOrder = async (req, res, next) => {
       razorpayOrderId: razorpayOrder.id,
       idempotencyKey,
       status: 'created',
-    });
-
-    await logAudit({
-      actorId: memberId,
-      actorRole: req.user.role,
-      action: 'order_created',
-      targetType: 'order',
-      targetId: order.id,
-      metadata: { razorpayOrderId: razorpayOrder.id, amount: totalAmountPaise, vehicleIds },
     });
 
     res.status(201).json({
@@ -233,15 +223,6 @@ const handlePaymentWebhook = async (req, res, next) => {
         }
       }
     }
-
-    await logAudit({
-      actorId: order.memberId,
-      actorRole: 'member',
-      action: 'payment_verified_vehicles_activated',
-      targetType: 'order',
-      targetId: order.id,
-      metadata: { razorpayPaymentId, vehicleIdsCount: vehicleIds.length },
-    }, t);
 
     await t.commit();
     logger.info(`[PAYMENT SUCCESS] Order #${order.id} verified & activated ${vehicleIds.length} vehicles.`);
