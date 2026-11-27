@@ -20,6 +20,7 @@ const { z } = require('zod');
 const vehicleSchema = z.object({
   body: z.object({
     vehicleNumber: z.string().min(3),
+    vehicleName: z.string().max(100).optional(),
     vehicleType: z.enum(['2wheeler', '4wheeler']),
     documents: z.array(z.string()).optional(),
   }),

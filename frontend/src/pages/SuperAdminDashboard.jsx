@@ -227,56 +227,74 @@ export default function SuperAdminDashboard() {
   };
 
   // Fetch Active Tab Data with Server-Side Pagination & Filtering
-  const fetchTabData = async () => {
+  const fetchTabData = async (targetTab = tab, targetPage = page, targetSearch = searchQuery) => {
     const reqId = ++requestIdRef.current;
     setLoading(true);
 
     try {
-      if (tab === 'applications') {
-        const res = await API.get(`/admin/societies?status=pending&page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
+      const activeTab = targetTab || tab;
+      const activePage = targetPage || 1;
+      const activeSearch = targetSearch !== undefined ? targetSearch : searchQuery;
+
+      if (activeTab === 'applications') {
+        const res = await API.get(`/admin/societies?status=pending&page=${activePage}&limit=10&search=${encodeURIComponent(activeSearch)}`);
         if (reqId !== requestIdRef.current) return;
         if (res.data?.success) {
           setApplications(res.data.data || []);
-          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: 1, limit: 10, totalPages: 1 });
+          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: activePage, limit: 10, totalPages: 1 });
         }
-      } else if (tab === 'societies') {
+      } else if (activeTab === 'societies') {
         const statusParam = societyStatusFilter === 'all' ? '' : `&status=${societyStatusFilter}`;
-        const res = await API.get(`/admin/societies?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}${statusParam}`);
+        const res = await API.get(`/admin/societies?page=${activePage}&limit=10&search=${encodeURIComponent(activeSearch)}${statusParam}`);
         if (reqId !== requestIdRef.current) return;
         if (res.data?.success) {
           setSocieties(res.data.data || []);
-          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: 1, limit: 10, totalPages: 1 });
+          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: activePage, limit: 10, totalPages: 1 });
         }
-      } else if (tab === 'users') {
+      } else if (activeTab === 'users') {
         const roleParam = userRoleFilter === 'all' ? '' : `&role=${userRoleFilter}`;
-        const res = await API.get(`/admin/users?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}${roleParam}`);
+        const res = await API.get(`/admin/users?page=${activePage}&limit=10&search=${encodeURIComponent(activeSearch)}${roleParam}`);
         if (reqId !== requestIdRef.current) return;
         if (res.data?.success) {
           setUsers(res.data.data || []);
-          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: 1, limit: 10, totalPages: 1 });
+          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: activePage, limit: 10, totalPages: 1 });
         }
-      } else if (tab === 'support') {
-        const res = await API.get(`/admin/support-feedback?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}`);
+      } else if (activeTab === 'support') {
+        const res = await API.get(`/admin/support-feedback?page=${activePage}&limit=10&search=${encodeURIComponent(activeSearch)}`);
         if (reqId !== requestIdRef.current) return;
         if (res.data?.success) {
           setSupportMessages(res.data.data || []);
-          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: 1, limit: 10, totalPages: 1 });
+          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: activePage, limit: 10, totalPages: 1 });
         }
-      } else if (tab === 'payments') {
+      } else if (activeTab === 'payments') {
         const statusParam = paymentStatusFilter === 'all' ? '' : `&status=${paymentStatusFilter}`;
-        const res = await API.get(`/admin/payments?page=${page}&limit=10&search=${encodeURIComponent(searchQuery)}${statusParam}`);
+        const res = await API.get(`/admin/payments?page=${activePage}&limit=10&search=${encodeURIComponent(activeSearch)}${statusParam}`);
         if (reqId !== requestIdRef.current) return;
         if (res.data?.success) {
           setPayments(res.data.data || []);
           if (res.data.metrics) {
             setPaymentMetrics(res.data.metrics);
           }
-          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: 1, limit: 10, totalPages: 1 });
+          setPagination(res.data.meta || { total: res.data.data?.length || 0, page: activePage, limit: 10, totalPages: 1 });
         }
       }
     } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
+        return;
+      }
       if (reqId === requestIdRef.current) {
-        toast.error('Failed to load table entries.');
+        const activeTab = targetTab || tab;
+        if (activeTab === 'applications') setApplications([]);
+        else if (activeTab === 'societies') setSocieties([]);
+        else if (activeTab === 'users') setUsers([]);
+        else if (activeTab === 'support') setSupportMessages([]);
+        else if (activeTab === 'payments') setPayments([]);
+        setPagination({ total: 0, page: 1, limit: 10, totalPages: 1 });
+
+        // Only alert on internal server errors (5xx)
+        if (err?.response?.status && err.response.status >= 500) {
+          toast.error('Failed to load table entries.');
+        }
       }
     } finally {
       if (reqId === requestIdRef.current) {
@@ -912,7 +930,11 @@ export default function SuperAdminDashboard() {
                 <tbody>
                   <tr>
                     <td colSpan={4} className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                      No societies found matching your search.
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Societies Found</div>
+                      <div className="text-[11px] mt-0.5 text-zinc-400">No registered housing societies match your search or filter criteria.</div>
                     </td>
                   </tr>
                 </tbody>
@@ -967,7 +989,11 @@ export default function SuperAdminDashboard() {
               <CardSkeleton count={3} />
             ) : societies.length === 0 ? (
               <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                No societies found matching your search.
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Societies Found</div>
+                <div className="text-[11px] mt-0.5 text-zinc-400">No registered housing societies match your search or filter criteria.</div>
               </div>
             ) : (
               <div className="space-y-2.5 p-2.5">
@@ -1130,8 +1156,12 @@ export default function SuperAdminDashboard() {
               ) : users.length === 0 ? (
                 <tbody>
                   <tr>
-                    <td colSpan={5} className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                      No users found matching your search.
+                    <td colSpan={5} className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Users Found</div>
+                      <div className="text-[11px] mt-0.5 text-zinc-400">No user accounts found matching your selected role or search query.</div>
                     </td>
                   </tr>
                 </tbody>
@@ -1174,7 +1204,11 @@ export default function SuperAdminDashboard() {
               <CardSkeleton count={3} />
             ) : users.length === 0 ? (
               <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                No users found matching your search.
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Users Found</div>
+                <div className="text-[11px] mt-0.5 text-zinc-400">No user accounts found matching your selected role or search query.</div>
               </div>
             ) : (
               <div className="space-y-2.5 p-2.5">
@@ -1279,8 +1313,12 @@ export default function SuperAdminDashboard() {
               ) : supportMessages.length === 0 ? (
                 <tbody>
                   <tr>
-                    <td colSpan={5} className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                      No support inquiries or feedback received yet.
+                    <td colSpan={5} className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                        <MessageSquare className="w-5 h-5" />
+                      </div>
+                      <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Support Inquiries Yet</div>
+                      <div className="text-[11px] mt-0.5 text-zinc-400">No member support requests or feedback messages have been submitted.</div>
                     </td>
                   </tr>
                 </tbody>
@@ -1331,7 +1369,11 @@ export default function SuperAdminDashboard() {
               <CardSkeleton count={3} />
             ) : supportMessages.length === 0 ? (
               <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                No support inquiries or feedback received yet.
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Support Inquiries Yet</div>
+                <div className="text-[11px] mt-0.5 text-zinc-400">No member support requests or feedback messages have been submitted.</div>
               </div>
             ) : (
               <div className="space-y-2.5 p-2.5">
@@ -1489,8 +1531,12 @@ export default function SuperAdminDashboard() {
               ) : payments.length === 0 ? (
                 <tbody>
                   <tr>
-                    <td colSpan={7} className="p-12 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                      No payment transactions found.
+                    <td colSpan={7} className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                      <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Payment Transactions Found</div>
+                      <div className="text-[11px] mt-0.5 text-zinc-400">No pass payments or transactions have been recorded matching your criteria.</div>
                     </td>
                   </tr>
                 </tbody>
@@ -1584,7 +1630,11 @@ export default function SuperAdminDashboard() {
               <CardSkeleton count={3} />
             ) : payments.length === 0 ? (
               <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 text-xs">
-                No payment transactions found.
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div className="font-bold text-zinc-800 dark:text-zinc-200 text-sm">No Payment Transactions Found</div>
+                <div className="text-[11px] mt-0.5 text-zinc-400">No pass payments or transactions have been recorded matching your criteria.</div>
               </div>
             ) : (
               <div className="space-y-2.5 p-2.5">

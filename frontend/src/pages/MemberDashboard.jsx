@@ -43,6 +43,7 @@ export default function MemberDashboard() {
 
   // Vehicle Registration Modal & Form
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [vehicleName, setVehicleName] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleType, setVehicleType] = useState('4wheeler');
   const [registering, setRegistering] = useState(false);
@@ -114,6 +115,7 @@ export default function MemberDashboard() {
     setRegistering(true);
     try {
       const res = await API.post('/member/vehicles', {
+        vehicleName: vehicleName.trim() || undefined,
         vehicleNumber: vehicleNumber.toUpperCase().trim(),
         vehicleType,
         passType: 'regular',
@@ -122,6 +124,7 @@ export default function MemberDashboard() {
 
       if (res.data.success) {
         toast.success('Vehicle registered! Pass will activate upon Society Admin approval.');
+        setVehicleName('');
         setVehicleNumber('');
         setVehicleType('4wheeler');
         setDocumentPreview(null);
@@ -933,9 +936,24 @@ export default function MemberDashboard() {
             <span>Passes are free for verified society residents and activate after admin review.</span>
           </div>
 
+          {/* 1. Car / Scooter Name */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              Vehicle Registration Number (License Plate)
+              1. Car / Scooter Name
+            </label>
+            <input
+              type="text"
+              value={vehicleName}
+              onChange={(e) => setVehicleName(e.target.value)}
+              placeholder="e.g. Honda City / Activa 6G"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition"
+            />
+          </div>
+
+          {/* 2. Number Plate */}
+          <div>
+            <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+              2. Number Plate (Registration Number)
             </label>
             <input
               type="text"
@@ -949,9 +967,10 @@ export default function MemberDashboard() {
             />
           </div>
 
+          {/* 3. Vehicle Type */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              Vehicle Type
+              3. Vehicle Type
             </label>
             <div className="grid grid-cols-2 gap-2.5">
               <button
@@ -982,10 +1001,10 @@ export default function MemberDashboard() {
             </div>
           </div>
 
-          {/* RC / Vehicle Document Upload */}
+          {/* 4. RC Certificate / Car Photo */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
-              Vehicle RC Certificate / Car Photo <span className="text-zinc-400 font-normal">(JPG, PNG • Max 5MB)</span>
+              4. RC Certificate / Car Photo <span className="text-zinc-400 font-normal">(JPG, PNG • Max 5MB)</span>
             </label>
             <div className="flex items-center gap-2.5">
               <label className="flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-amber-500 bg-zinc-50 dark:bg-[#18181b] cursor-pointer text-xs text-zinc-600 dark:text-zinc-300 transition">

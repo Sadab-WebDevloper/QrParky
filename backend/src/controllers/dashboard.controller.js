@@ -155,7 +155,7 @@ const getSocietyPendingCheck = async (req, res, next) => {
         where: { societyId, status: 'pending' },
         order: [['id', 'DESC']],
         include: [{ model: User, as: 'owner', attributes: ['name'] }],
-        attributes: ['id', 'vehicleNumber', 'createdAt'],
+        attributes: ['id', 'vehicleNumber', 'vehicleName', 'vehicleType', 'createdAt'],
       }),
       User.findOne({
         where: { societyId, role: ROLES.MEMBER, status: 'pending' },
@@ -175,6 +175,8 @@ const getSocietyPendingCheck = async (req, res, next) => {
         latestVehicle: latestVehicle ? {
           id: latestVehicle.id,
           vehicleNumber: latestVehicle.vehicleNumber,
+          vehicleName: latestVehicle.vehicleName,
+          vehicleType: latestVehicle.vehicleType,
           ownerName: latestVehicle.owner?.name,
         } : null,
         syncSignature,
@@ -224,7 +226,7 @@ const getSocietyAdminInit = async (req, res, next) => {
           {
             model: Vehicle,
             as: 'vehicles',
-            attributes: ['id', 'vehicleNumber', 'vehicleType', 'status', 'passType'],
+            attributes: ['id', 'vehicleNumber', 'vehicleName', 'vehicleType', 'status', 'passType', 'documents'],
             required: false,
           },
         ],
@@ -394,7 +396,12 @@ const getSupportFeedback = async (req, res, next) => {
     });
 
     let items = rows.map((r) => {
-      const meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {});
+      let meta = {};
+      try {
+        meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {});
+      } catch (e) {
+        meta = typeof r.metadata === 'object' && r.metadata !== null ? r.metadata : {};
+      }
       return {
         id: r.id,
         name: meta.name || 'Anonymous',
@@ -409,21 +416,23 @@ const getSupportFeedback = async (req, res, next) => {
       const q = search.trim().toLowerCase();
       items = items.filter(
         (it) =>
-          it.name.toLowerCase().includes(q) ||
-          it.emailOrPhone.toLowerCase().includes(q) ||
-          it.category.toLowerCase().includes(q) ||
-          it.message.toLowerCase().includes(q)
+          (it.name && it.name.toLowerCase().includes(q)) ||
+          (it.emailOrPhone && it.emailOrPhone.toLowerCase().includes(q)) ||
+          (it.category && it.category.toLowerCase().includes(q)) ||
+          (it.message && it.message.toLowerCase().includes(q))
       );
     }
+
+    const totalCount = search && search.trim() ? items.length : (count || 0);
 
     res.json({
       success: true,
       data: items,
       meta: {
-        total: count,
+        total: totalCount,
         page: pageNum,
         limit: limitNum,
-        totalPages: Math.ceil(count / limitNum) || 1,
+        totalPages: Math.ceil(totalCount / limitNum) || 1,
       },
     });
   } catch (error) {
@@ -527,16 +536,24 @@ const getAdminPayments = async (req, res, next) => {
     });
 
     // Collect all vehicle IDs from orders to fetch vehicle details
+    const parseVehicleIds = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'number') return [val];
+      try {
+        const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+        return Array.isArray(parsed) ? parsed : (typeof parsed === 'number' ? [parsed] : []);
+      } catch (e) {
+        if (typeof val === 'string') {
+          return val.split(',').map((x) => parseInt(x.trim(), 10)).filter(Boolean);
+        }
+        return [];
+      }
+    };
+
     const allVehicleIds = Array.from(
       new Set(
-        orders.flatMap((o) => {
-          try {
-            const vIds = typeof o.vehicleIds === 'string' ? JSON.parse(o.vehicleIds) : o.vehicleIds;
-            return Array.isArray(vIds) ? vIds : [];
-          } catch (e) {
-            return [];
-          }
-        })
+        orders.flatMap((o) => parseVehicleIds(o.vehicleIds))
       )
     );
 
@@ -552,23 +569,19 @@ const getAdminPayments = async (req, res, next) => {
     }
 
     const formattedOrders = orders.map((o) => {
-      let vIds = [];
-      try {
-        vIds = typeof o.vehicleIds === 'string' ? JSON.parse(o.vehicleIds) : o.vehicleIds;
-      } catch (e) {
-        vIds = [];
-      }
-      const orderVehicles = Array.isArray(vIds) ? vIds.map((id) => vehicleMap[id]).filter(Boolean) : [];
+      const vIds = parseVehicleIds(o.vehicleIds);
+      const orderVehicles = vIds.map((id) => vehicleMap[id]).filter(Boolean);
       const latestPayment = o.payments && o.payments.length > 0 ? o.payments[o.payments.length - 1] : null;
+      const numAmount = Number(o.amount) || 0;
 
       return {
         id: o.id,
         orderId: o.id,
         razorpayOrderId: o.razorpayOrderId,
         razorpayPaymentId: latestPayment ? latestPayment.razorpayPaymentId : null,
-        paymentVerified: latestPayment ? latestPayment.verified : false,
-        amountINR: Math.round(o.amount / 100),
-        amountPaise: o.amount,
+        paymentVerified: latestPayment ? !!latestPayment.verified : false,
+        amountINR: Math.round(numAmount / 100),
+        amountPaise: numAmount,
         status: o.status,
         createdAt: o.createdAt,
         member: o.member
@@ -590,12 +603,23 @@ const getAdminPayments = async (req, res, next) => {
       };
     });
 
-    // Summary metrics
-    const [totalRevenuePaise, paidOrdersCount, totalOrdersCount] = await Promise.all([
-      Order.sum('amount', { where: { status: 'paid' } }) || 0,
-      Order.count({ where: { status: 'paid' } }),
-      Order.count(),
-    ]);
+    // Summary metrics with safe fallbacks
+    let totalRevenuePaise = 0;
+    let paidOrdersCount = 0;
+    let totalOrdersCount = 0;
+
+    try {
+      const [sumRev, paidCnt, totalCnt] = await Promise.all([
+        Order.sum('amount', { where: { status: 'paid' } }),
+        Order.count({ where: { status: 'paid' } }),
+        Order.count(),
+      ]);
+      totalRevenuePaise = Number(sumRev) || 0;
+      paidOrdersCount = paidCnt || 0;
+      totalOrdersCount = totalCnt || 0;
+    } catch (e) {
+      // Keep defaults
+    }
 
     res.json({
       success: true,
@@ -606,10 +630,10 @@ const getAdminPayments = async (req, res, next) => {
         totalOrdersCount,
       },
       meta: {
-        total: count,
+        total: count || 0,
         page: pageNum,
         limit: limitNum,
-        totalPages: Math.ceil(count / limitNum) || 1,
+        totalPages: Math.ceil((count || 0) / limitNum) || 1,
       },
     });
   } catch (error) {

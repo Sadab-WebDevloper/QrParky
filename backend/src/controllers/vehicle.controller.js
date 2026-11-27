@@ -11,7 +11,7 @@ const { ROLES } = require('../config/constants');
  */
 const createVehicle = async (req, res, next) => {
   try {
-    const { vehicleNumber, vehicleType, passType = 'regular', documents = [] } = req.body;
+    const { vehicleNumber, vehicleName, vehicleType, passType = 'regular', documents = [] } = req.body;
     const memberId = req.user.id;
     const societyId = req.user.societyId;
 
@@ -35,6 +35,7 @@ const createVehicle = async (req, res, next) => {
     const vehicle = await Vehicle.create({
       memberId,
       societyId,
+      vehicleName: vehicleName ? vehicleName.trim() : null,
       vehicleNumber: normalizedNum,
       vehicleType,
       passType: passType === 'professional' ? 'professional' : 'regular',

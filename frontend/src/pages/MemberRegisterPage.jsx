@@ -136,7 +136,7 @@ export default function MemberRegisterPage() {
     const trimmedName = formData.name.trim();
 
     if (!trimmedName) {
-      newErrors.name = 'Full name is required';
+      newErrors.name = 'Full name is required (first and last name)';
     } else if (trimmedName.length < 3) {
       newErrors.name = 'Full name must be at least 3 characters';
     } else if (!fullNameRegex.test(trimmedName)) {
@@ -166,13 +166,16 @@ export default function MemberRegisterPage() {
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validateForm()) {
-      toast.error('Please resolve form validation errors.');
+    const formValidationErrors = validateForm();
+    const errorKeys = Object.keys(formValidationErrors);
+    if (errorKeys.length > 0) {
+      // Show the exact first field validation error directly
+      toast.error(formValidationErrors[errorKeys[0]]);
       return;
     }
 
@@ -201,29 +204,91 @@ export default function MemberRegisterPage() {
       }
     } catch (err) {
       const data = err.response?.data;
-      let errMsg = data?.message || 'Registration failed.';
+      let errMsg = '';
 
-      // Extract specific error details if backend provides an errors array
-      if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
-        const firstErr = data.errors[0];
-        const detailMsg = firstErr.message || firstErr.msg;
-        if (detailMsg && (errMsg === 'Validation error' || !errMsg.includes(detailMsg))) {
-          errMsg = detailMsg;
+      // 1. Check for specific errors array from validation (Zod, express-validator, Sequelize)
+      if (data?.errors) {
+        if (Array.isArray(data.errors) && data.errors.length > 0) {
+          const first = data.errors[0];
+          if (typeof first === 'string') {
+            errMsg = first;
+          } else if (typeof first === 'object' && first !== null) {
+            errMsg = first.message || first.msg || first.detail || '';
+          }
+        } else if (typeof data.errors === 'object') {
+          const firstKey = Object.keys(data.errors)[0];
+          if (firstKey) {
+            const val = data.errors[firstKey];
+            errMsg = typeof val === 'string' ? val : (val?.message || val?.msg || '');
+          }
         }
+      }
+
+      // 2. Check for backend data.message / data.error / data.detail
+      if (!errMsg) {
+        if (typeof data === 'string') {
+          if (data.includes('Payload Too Large') || err.response?.status === 413) {
+            errMsg = 'Uploaded photos or documents exceed the maximum upload size limit. Please upload images under 5MB.';
+          } else if (data.includes('Too many requests') || err.response?.status === 429) {
+            errMsg = 'Too many registration requests. Please wait a moment before trying again.';
+          } else if (data.includes('<') && data.includes('>')) {
+            const textOnly = data.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            errMsg = textOnly.slice(0, 150);
+          } else {
+            errMsg = data;
+          }
+        } else if (typeof data === 'object' && data !== null) {
+          errMsg = data.message || data.error || data.detail || '';
+        }
+      }
+
+      // 3. Fallbacks based on HTTP status code if message is generic
+      if (!errMsg || errMsg.toLowerCase() === 'validation error') {
+        if (err.response?.status === 413) {
+          errMsg = 'Attached photo or RC document is too large. Please upload an image under 5MB.';
+        } else if (err.response?.status === 429) {
+          errMsg = 'Too many attempts from your device. Please try again later.';
+        } else if (err.response?.status === 404) {
+          errMsg = 'Invalid or expired society invite link. Please request a new link from your Society Admin.';
+        } else if (err.response?.status === 409) {
+          errMsg = 'An account or vehicle with these details is already registered.';
+        } else if (err.response?.status === 500) {
+          errMsg = 'Server temporarily unavailable during registration. Please try again shortly.';
+        }
+      }
+
+      // 4. Network or connection errors
+      if (!errMsg) {
+        if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+          errMsg = 'Connection timed out while uploading images. Please check your network and try again.';
+        } else if (err.message === 'Network Error' || !err.response) {
+          errMsg = 'Unable to connect to server. Please check your network connection.';
+        } else if (err.message) {
+          errMsg = err.message;
+        } else {
+          errMsg = 'Please check that your name, email, phone, and vehicle registration are valid.';
+        }
+      }
+
+      // Ensure generic "Registration failed" is never shown
+      if (errMsg.toLowerCase().includes('registration failed')) {
+        errMsg = 'Please verify that your email, phone, and vehicle number are not already registered.';
       }
 
       toast.error(errMsg);
 
       // Highlight the specific input field that caused the error
       const lower = errMsg.toLowerCase();
-      if (lower.includes('phone')) {
+      if (lower.includes('phone') || lower.includes('mobile')) {
         setErrors((prev) => ({ ...prev, phone: errMsg }));
       } else if (lower.includes('email')) {
         setErrors((prev) => ({ ...prev, email: errMsg }));
-      } else if (lower.includes('vehicle')) {
+      } else if (lower.includes('vehicle') || lower.includes('plate')) {
         setErrors((prev) => ({ ...prev, vehicleNumber: errMsg }));
       } else if (lower.includes('password')) {
         setErrors((prev) => ({ ...prev, password: errMsg }));
+      } else if (lower.includes('name')) {
+        setErrors((prev) => ({ ...prev, name: errMsg }));
       }
     } finally {
       setSubmitting(false);
@@ -542,16 +607,16 @@ export default function MemberRegisterPage() {
                   <Car className="w-3.5 h-3.5 text-amber-500" />
                   <span>2. Vehicle Details</span>
                 </div>
-                {/* <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   Included Free
-                </span> */}
+                </span>
               </div>
 
               {/* 1. Car / Scooter Name & 2. Number Plate */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
                 <div>
                   <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Car / Scooter Name 
+                    1. Car / Scooter Name 
                   </label>
                   <div className="relative">
                     <Car className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -567,7 +632,7 @@ export default function MemberRegisterPage() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Registration Plate 
+                    2. Number Plate (Registration Plate) 
                   </label>
                   <div className="relative">
                     <input
@@ -601,7 +666,7 @@ export default function MemberRegisterPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
                 <div>
                   <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Vehicle Type
+                    3. Vehicle Type
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -634,7 +699,7 @@ export default function MemberRegisterPage() {
 
                 <div>
                   <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Car Image / RC Document <span className="text-zinc-400 font-normal">(JPG, PNG • Max 5MB)</span>
+                    4. RC Certificate / Document <span className="text-zinc-400 font-normal">(JPG, PNG • Max 5MB)</span>
                   </label>
                   <div className="flex items-center gap-2">
                     <label className="flex-1 flex items-center justify-center gap-2 h-[38px] px-3 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-amber-500 bg-zinc-50 dark:bg-[#18181b] cursor-pointer text-xs text-zinc-600 dark:text-zinc-300 transition">

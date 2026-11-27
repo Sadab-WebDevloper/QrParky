@@ -100,6 +100,9 @@ export default function SocietyAdminDashboard() {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -107,7 +110,7 @@ export default function SocietyAdminDashboard() {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(587.33, ctx.currentTime); // Note D5
       osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // Note A5
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.45);
@@ -224,28 +227,31 @@ export default function SocietyAdminDashboard() {
       }
 
       // Check if counts increased (new incoming request)
-      const hasNewRequest =
-        pendingMembersCount > prevCountsRef.current.members ||
-        pendingVehiclesCount > prevCountsRef.current.vehicles;
+      const isNewMember = pendingMembersCount > prevCountsRef.current.members;
+      const isNewVehicle = pendingVehiclesCount > prevCountsRef.current.vehicles;
+      const hasNewRequest = isNewMember || isNewVehicle;
 
       if (hasNewRequest && lastSignatureRef.current !== null) {
         playNotificationChime();
 
-        const applicantName = latestVehicle?.ownerName || latestMember?.name || 'New Resident';
+        const applicantName = latestMember?.name || latestVehicle?.ownerName || 'New Resident';
         const plateNumber = latestVehicle?.vehicleNumber || '';
+        const vehicleName = latestVehicle?.vehicleName || '';
         const totalNew = pendingMembersCount + pendingVehiclesCount;
 
         setLiveAlert({
           id: Date.now(),
           name: applicantName,
+          vehicleName: vehicleName,
           vehicleNumber: plateNumber,
           count: totalNew,
-          targetTab: latestVehicle ? 'vehicles' : 'members',
+          targetTab: isNewMember ? 'members' : 'vehicles',
           timestamp: new Date(),
         });
 
+        const vehicleDesc = vehicleName && plateNumber ? `${vehicleName} (${plateNumber})` : (plateNumber || vehicleName || '');
         toast.info(
-          `🔔 New Request: ${applicantName}${plateNumber ? ` (${plateNumber})` : ''} has submitted an application!`
+          `🔔 New Request: ${applicantName} has applied ${vehicleDesc ? `with ${vehicleDesc}` : 'for society registration'}!`
         );
       }
 
@@ -274,10 +280,10 @@ export default function SocietyAdminDashboard() {
   useEffect(() => {
     fetchData();
 
-    // Lightweight interval (15s) with tab visibility protection
+    // Fast, responsive polling interval (8s) with tab visibility protection
     const interval = setInterval(() => {
       pollForNewRequests();
-    }, 15000);
+    }, 8000);
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
@@ -867,21 +873,49 @@ export default function SocietyAdminDashboard() {
             Society Admin Dashboard
           </h1>
         </div>
-        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold">
-          <Shield className="w-3.5 h-3.5" />
-          <span>{user?.societyName || 'Society Admin'}</span>
+        
+        <div className="flex items-center gap-2">
+          {/* In-App Live Notification Bell with Pending Counter */}
+          <button
+            onClick={() => {
+              if ((stats?.members?.pending || 0) > 0) {
+                setActiveTab('members');
+                setMemberFilter('pending');
+              } else if ((stats?.vehicles?.pending || 0) > 0) {
+                setActiveTab('vehicles');
+                setVehicleFilter('pending');
+              } else {
+                toast.info('No pending resident requests at this time.');
+              }
+            }}
+            className="relative h-8 px-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="In-App Notifications / Pending Requests"
+          >
+            <BellRing className={`w-3.5 h-3.5 ${((stats?.members?.pending || 0) + (stats?.vehicles?.pending || 0)) > 0 ? 'text-amber-500 animate-pulse' : 'text-zinc-400'}`} />
+            <span className="hidden sm:inline">Requests</span>
+            {((stats?.members?.pending || 0) + (stats?.vehicles?.pending || 0)) > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono font-bold text-[10px] shadow-xs animate-bounce">
+                {(stats?.members?.pending || 0) + (stats?.vehicles?.pending || 0)}
+              </span>
+            )}
+          </button>
+
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-bold">
+            <Shield className="w-3.5 h-3.5" />
+            <span>{user?.societyName || 'Society Admin'}</span>
+          </div>
         </div>
       </div>
 
       {/* Live Notification Alert Banner */}
       {liveAlert && (
-        <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+        <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 shadow-xs">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-amber-500 text-zinc-950 flex items-center justify-center font-black shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-amber-500 text-zinc-950 flex items-center justify-center font-black shrink-0 shadow-xs">
               <BellRing className="w-3.5 h-3.5 animate-bounce" />
             </div>
             <div className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-              <span className="font-bold text-amber-600 dark:text-amber-400">{liveAlert.name}</span> applied for a vehicle pass {liveAlert.vehicleNumber && <span className="font-mono font-bold">({liveAlert.vehicleNumber})</span>}!
+              <span className="font-bold text-amber-600 dark:text-amber-400">{liveAlert.name}</span> has submitted a new request {liveAlert.vehicleNumber && <span>with <span className="font-semibold text-zinc-900 dark:text-white">{liveAlert.vehicleName ? `${liveAlert.vehicleName} ` : ''}</span><span className="font-mono font-bold text-amber-600 dark:text-amber-400">({liveAlert.vehicleNumber})</span></span>}!
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -892,14 +926,14 @@ export default function SocietyAdminDashboard() {
                 if (liveAlert.targetTab === 'members') setMemberFilter('pending');
                 setLiveAlert(null);
               }}
-              className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 cursor-pointer active:scale-95"
+              className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs transition"
             >
-              <span>Review</span>
+              <span>Review Request</span>
               <ChevronRight className="w-3 h-3" />
             </button>
             <button
               onClick={() => setLiveAlert(null)}
-              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer transition"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1641,12 +1675,11 @@ export default function SocietyAdminDashboard() {
                         <tr key={m.id} className="hover:bg-zinc-50/80 dark:hover:bg-[#18181b]/50 transition-colors">
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
+                              <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0 shadow-xs">
                                 {m.name?.charAt(0).toUpperCase()}
                               </div>
                               <div>
                                 <div className="font-extrabold text-zinc-900 dark:text-white text-xs">{m.name}</div>
-                                <div className="text-[10px] text-zinc-400">ID: #{m.id}</div>
                               </div>
                             </div>
                           </td>
@@ -1670,11 +1703,38 @@ export default function SocietyAdminDashboard() {
 
                           <td className="px-4 py-2 text-xs">
                             {m.vehicles && m.vehicles.length > 0 ? (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold border border-amber-500/20 text-[11px]">
-                                🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
-                              </span>
+                              <div className="space-y-1.5 max-w-xs">
+                                {m.vehicles.map((v) => (
+                                  <div key={v.id} className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800">
+                                    <span className="text-[11px] font-bold text-zinc-900 dark:text-white flex items-center gap-1">
+                                      {v.vehicleType === '2wheeler' ? '🏍️' : '🚗'} {v.vehicleName || (v.vehicleType === '2wheeler' ? 'Two-Wheeler' : 'Four-Wheeler')}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-amber-400 font-mono font-bold text-[10px] uppercase tracking-wider border border-zinc-700">
+                                      {v.vehicleNumber}
+                                    </span>
+                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                      v.status === 'active' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30' :
+                                      v.status === 'pending' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30' :
+                                      'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                                    }`}>
+                                      {v.status === 'pending' ? 'Pass Pending' : v.status}
+                                    </span>
+                                    {v.documents && v.documents.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedDocument(v.documents[0])}
+                                        className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 text-[10px] font-bold border border-amber-500/20 inline-flex items-center gap-0.5 cursor-pointer transition"
+                                        title="View RC Document"
+                                      >
+                                        <FileText className="w-2.5 h-2.5" />
+                                        <span>RC Doc</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             ) : (
-                              <span className="text-zinc-400 italic text-[11px]">None</span>
+                              <span className="text-zinc-400 italic text-[11px]">No vehicle applied</span>
                             )}
                           </td>
 
@@ -1728,12 +1788,11 @@ export default function SocietyAdminDashboard() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-zinc-950 font-bold text-xs shrink-0 shadow-xs">
                             {m.name?.charAt(0).toUpperCase()}
                           </div>
                           <div>
                             <div className="font-extrabold text-zinc-900 dark:text-white text-xs">{m.name}</div>
-                            <div className="text-[10px] text-zinc-400">ID: #{m.id}</div>
                           </div>
                         </div>
 
@@ -1759,19 +1818,53 @@ export default function SocietyAdminDashboard() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[11px]">
-                        <div>
-                          {m.vehicles && m.vehicles.length > 0 ? (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 font-bold border border-amber-500/20 text-[10px]">
-                              🚗 {m.vehicles.length} {m.vehicles.length === 1 ? 'Vehicle' : 'Vehicles'}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-400 italic text-[10px]">No vehicles</span>
-                          )}
+                      {/* Detailed Vehicle Information on Mobile */}
+                      <div className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-100 dark:border-zinc-800/80 space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase">
+                          <span>Vehicle Details</span>
+                          <span className="text-[10px] text-zinc-400 lowercase font-normal">
+                            Joined {new Date(m.createdAt).toLocaleDateString()}
+                          </span>
                         </div>
-                        <div className="text-[10px] text-zinc-400">
-                          Joined: {new Date(m.createdAt).toLocaleDateString()}
-                        </div>
+
+                        {m.vehicles && m.vehicles.length > 0 ? (
+                          <div className="space-y-1">
+                            {m.vehicles.map((v) => (
+                              <div key={v.id} className="flex items-center justify-between gap-1 p-1 rounded bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800 text-xs">
+                                <div>
+                                  <div className="font-bold text-zinc-900 dark:text-white text-[11px] flex items-center gap-1">
+                                    <span>{v.vehicleType === '2wheeler' ? '🏍️' : '🚗'}</span>
+                                    <span>{v.vehicleName || (v.vehicleType === '2wheeler' ? '2-Wheeler' : '4-Wheeler')}</span>
+                                  </div>
+                                  <div className="font-mono font-bold text-amber-600 dark:text-amber-400 text-[10px]">
+                                    {v.vehicleNumber}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                    v.status === 'active' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' :
+                                    v.status === 'pending' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' :
+                                    'bg-zinc-100 dark:bg-zinc-800 text-zinc-600'
+                                  }`}>
+                                    {v.status === 'pending' ? 'Pending' : v.status}
+                                  </span>
+                                  {v.documents && v.documents.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDocument(v.documents[0])}
+                                      className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20 flex items-center gap-0.5 cursor-pointer"
+                                    >
+                                      <FileText className="w-2.5 h-2.5" />
+                                      <span>RC</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-zinc-400 italic">No vehicle applied</div>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-zinc-100 dark:border-zinc-800/80">
@@ -2008,16 +2101,33 @@ export default function SocietyAdminDashboard() {
                   {selectedMember.vehicles.map((veh) => (
                     <div key={veh.id} className="p-3 rounded-xl bg-zinc-50 dark:bg-[#18181b] border border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-xs">
                       <div>
-                        <div className="font-mono font-bold text-zinc-900 dark:text-white text-sm">{veh.vehicleNumber}</div>
-                        <div className="text-zinc-500 capitalize">{veh.vehicleType}</div>
+                        <div className="font-bold text-zinc-900 dark:text-white text-xs flex items-center gap-1.5">
+                          <span>{veh.vehicleType === '2wheeler' ? '🏍️' : '🚗'}</span>
+                          <span>{veh.vehicleName || (veh.vehicleType === '2wheeler' ? 'Two-Wheeler' : 'Four-Wheeler')}</span>
+                        </div>
+                        <div className="font-mono font-bold text-amber-600 dark:text-amber-400 text-sm mt-0.5 uppercase">
+                          {veh.vehicleNumber}
+                        </div>
+                        <div className="text-zinc-500 text-[11px] capitalize">{veh.vehicleType}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                           veh.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-300' :
                           'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400 border border-yellow-300'
                         }`}>
-                          {veh.status}
+                          {veh.status === 'pending' ? 'Pending Pass' : veh.status}
                         </span>
+
+                        {veh.documents && veh.documents.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDocument(veh.documents[0])}
+                            className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 text-[11px] font-bold hover:border-amber-400 transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <FileText className="w-3 h-3 text-amber-500" />
+                            <span>RC Doc</span>
+                          </button>
+                        )}
 
                         {veh.status === 'active' && (
                           <button

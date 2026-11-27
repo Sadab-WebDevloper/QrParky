@@ -213,7 +213,7 @@ const getSocietyMembers = async (req, res, next) => {
         {
           model: Vehicle,
           as: 'vehicles',
-          attributes: ['id', 'vehicleNumber', 'vehicleType', 'status', 'passType'],
+          attributes: ['id', 'vehicleNumber', 'vehicleName', 'vehicleType', 'status', 'passType', 'documents'],
           required: false,
         },
       ],
