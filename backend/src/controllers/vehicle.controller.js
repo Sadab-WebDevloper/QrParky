@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const { Vehicle, QRCode, User, Society } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/cryptoUtils');
 const { generateQRDataUrl } = require('../utils/qrGenerator');
@@ -69,24 +70,59 @@ const createVehicle = async (req, res, next) => {
 };
 
 /**
- * Member: Get my registered vehicles
+ * Member: Get my registered vehicles (supports status & search query filters)
  */
 const getMyVehicles = async (req, res, next) => {
   try {
     const memberId = req.user.id;
-    const vehicles = await Vehicle.findAll({
-      where: { memberId },
-      order: [['createdAt', 'DESC']],
-      include: [
-        {
-          model: QRCode,
-          as: 'qrCode',
-          attributes: ['id', 'isActive', 'generatedAt', 'revokedAt', 'qrImageUrl'],
-        },
-      ],
-    });
+    const { status, search } = req.query;
 
-    res.json({ success: true, data: vehicles });
+    const where = { memberId };
+    if (status && status !== 'all') {
+      if (status === 'suspended') {
+        where.status = { [Op.in]: ['suspended', 'expired'] };
+      } else {
+        where.status = status;
+      }
+    }
+
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      where[Op.or] = [
+        { vehicleNumber: { [Op.like]: q } },
+        { vehicleName: { [Op.like]: q } },
+        { vehicleType: { [Op.like]: q } },
+      ];
+    }
+
+    const [vehicles, totalCount, activeCount, awaitingPaymentCount, pendingCount] = await Promise.all([
+      Vehicle.findAll({
+        where,
+        order: [['createdAt', 'DESC']],
+        include: [
+          {
+            model: QRCode,
+            as: 'qrCode',
+            attributes: ['id', 'isActive', 'generatedAt', 'revokedAt', 'qrImageUrl'],
+          },
+        ],
+      }),
+      Vehicle.count({ where: { memberId } }),
+      Vehicle.count({ where: { memberId, status: 'active' } }),
+      Vehicle.count({ where: { memberId, status: 'awaiting_payment' } }),
+      Vehicle.count({ where: { memberId, status: 'pending' } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: vehicles || [],
+      summary: {
+        total: totalCount || 0,
+        active: activeCount || 0,
+        awaitingPayment: awaitingPaymentCount || 0,
+        pending: pendingCount || 0,
+      },
+    });
   } catch (error) {
     next(error);
   }

@@ -72,9 +72,9 @@ export default function ResetPasswordPage() {
             <div className="text-center py-6 space-y-4">
               <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto" />
               <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Password Reset Complete!</h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {/* <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Your new password is now active. You will be redirected to the sign-in page in a moment.
-              </p>
+              </p> */}
               <Link
                 to="/login"
                 className="inline-block px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-zinc-950 font-bold text-xs"

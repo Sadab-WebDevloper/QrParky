@@ -101,9 +101,14 @@ const login = async (req, res, next) => {
 
     // 4. Check account status approval
     if (user.status !== 'approved' && user.role !== ROLES.SUPER_ADMIN) {
+      const statusMessages = {
+        pending: 'Your account is currently pending approval from your Society Administrator. Please wait for approval before signing in.',
+        rejected: 'Your account application has been declined. Please contact your Society Administrator for assistance.',
+        suspended: 'Your account has been temporarily suspended. Please contact your Society Administrator for assistance.',
+      };
       return res.status(403).json({
         success: false,
-        message: `Account is currently '${user.status}'. Approval by Society Adminrequired.`,
+        message: statusMessages[user.status] || `Your account is currently '${user.status}'. Please contact your Society Administrator for assistance.`,
       });
     }
 
@@ -250,8 +255,8 @@ const resetPassword = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Token and new password are required.' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long.' });
     }
 
     const user = await User.findOne({

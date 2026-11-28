@@ -32,6 +32,7 @@ export default function MemberDashboard() {
   const { user } = useAuth();
   const toast = useToast();
   const [vehicles, setVehicles] = useState([]);
+  const [summary, setSummary] = useState({ total: 0, active: 0, awaitingPayment: 0, pending: 0 });
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(false);
 
@@ -40,6 +41,7 @@ export default function MemberDashboard() {
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'awaiting_payment', 'pending'
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const statusDropdownRef = useRef(null);
+  const searchMountedRef = useRef(false);
 
   // Vehicle Registration Modal & Form
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -64,12 +66,27 @@ export default function MemberDashboard() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const fetchVehicles = async () => {
+  const fetchVehicles = async (targetStatus = statusFilter, targetSearch = searchQuery) => {
     setLoading(true);
     try {
-      const res = await API.get('/member/vehicles');
+      const params = {};
+      if (targetStatus && targetStatus !== 'all') params.status = targetStatus;
+      if (targetSearch && targetSearch.trim()) params.search = targetSearch.trim();
+
+      const res = await API.get('/member/vehicles', { params });
       if (res.data.success) {
-        setVehicles(res.data.data);
+        const list = res.data.data || [];
+        setVehicles(list);
+        if (res.data.summary) {
+          setSummary(res.data.summary);
+        } else {
+          setSummary({
+            total: list.length,
+            active: list.filter((v) => v.status === 'active').length,
+            awaitingPayment: list.filter((v) => v.status === 'awaiting_payment').length,
+            pending: list.filter((v) => v.status === 'pending').length,
+          });
+        }
       }
     } catch (err) {
       toast.error('Failed to load member vehicles.');
@@ -79,8 +96,19 @@ export default function MemberDashboard() {
   };
 
   useEffect(() => {
-    fetchVehicles();
-  }, []);
+    fetchVehicles(statusFilter, searchQuery);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    if (!searchMountedRef.current) {
+      searchMountedRef.current = true;
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchVehicles(statusFilter, searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleDocumentChange = (e) => {
     const file = e.target.files?.[0];
@@ -405,26 +433,7 @@ export default function MemberDashboard() {
     }
   };
 
-  const activeVehicles = vehicles.filter((v) => v.status === 'active');
-  const awaitingPaymentVehicles = vehicles.filter((v) => v.status === 'awaiting_payment');
-  const pendingVehicles = vehicles.filter((v) => v.status === 'pending');
-
-  const filteredVehicles = vehicles.filter((v) => {
-    const matchesFilter =
-      statusFilter === 'all' ? true :
-      statusFilter === 'active' ? v.status === 'active' :
-      statusFilter === 'suspended' ? (v.status === 'suspended' || (v.status === 'expired' && v.qrCode)) :
-      statusFilter === 'awaiting_payment' ? v.status === 'awaiting_payment' :
-      statusFilter === 'pending' ? v.status === 'pending' :
-      v.status === statusFilter;
-
-    const query = searchQuery.toLowerCase().trim();
-    const matchesSearch = !query ||
-      v.vehicleNumber?.toLowerCase().includes(query) ||
-      v.vehicleType?.toLowerCase().includes(query);
-
-    return matchesFilter && matchesSearch;
-  });
+  const filteredVehicles = vehicles;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4 space-y-3">
@@ -477,7 +486,7 @@ export default function MemberDashboard() {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <div className="text-xl sm:text-2xl font-black text-zinc-900 dark:text-white tracking-tight leading-none">
-              {vehicles.length}
+              {summary.total}
             </div>
             <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
               Registered in flat
@@ -498,7 +507,7 @@ export default function MemberDashboard() {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight leading-none">
-              {activeVehicles.length}
+              {summary.active}
             </div>
             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-0.5">
               <CheckCircle2 className="w-3 h-3" />
@@ -511,7 +520,7 @@ export default function MemberDashboard() {
         <div 
           onClick={() => setStatusFilter('awaiting_payment')}
           className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-200 cursor-pointer glass-card glass-card-hover ${
-            awaitingPaymentVehicles.length > 0 
+            summary.awaitingPayment > 0 
               ? 'border-amber-400/70 dark:border-amber-500/40 bg-amber-50/25 dark:bg-amber-950/20 shadow-sm' 
               : 'border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214]'
           }`}
@@ -524,10 +533,10 @@ export default function MemberDashboard() {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 tracking-tight leading-none">
-              {awaitingPaymentVehicles.length}
+              {summary.awaitingPayment}
             </div>
             <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
-              {awaitingPaymentVehicles.length > 0 ? 'Fee to unlock' : 'No dues'}
+              {summary.awaitingPayment > 0 ? 'Fee to unlock' : 'No dues'}
             </div>
           </div>
         </div>
@@ -536,7 +545,7 @@ export default function MemberDashboard() {
         <div 
           onClick={() => setStatusFilter('pending')}
           className={`p-2.5 sm:p-3 rounded-xl border transition-all duration-200 cursor-pointer glass-card glass-card-hover ${
-            pendingVehicles.length > 0 
+            summary.pending > 0 
               ? 'border-yellow-400/70 dark:border-yellow-500/40 bg-yellow-50/25 dark:bg-yellow-950/20 shadow-sm' 
               : 'border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214]'
           }`}
@@ -549,10 +558,10 @@ export default function MemberDashboard() {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <div className="text-xl sm:text-2xl font-black text-yellow-600 dark:text-yellow-400 tracking-tight leading-none">
-              {pendingVehicles.length}
+              {summary.pending}
             </div>
             <div className="text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold">
-              {pendingVehicles.length > 0 ? 'Awaiting committee' : 'All approved'}
+              {summary.pending > 0 ? 'Awaiting committee' : 'All approved'}
             </div>
           </div>
         </div>

@@ -52,8 +52,8 @@ export default function SocietyAdminDashboard() {
   const [inviteLink, setInviteLink] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Consolidated Tabs: 'vehicles', 'members', 'invite'
-  const [activeTab, setActiveTab] = useState('vehicles');
+  // Consolidated Tabs: 'members', 'vehicles', 'invite'
+  const [activeTab, setActiveTab] = useState('members');
 
   // Vehicle filters
   const [vehicleFilter, setVehicleFilter] = useState('all'); // 'all', 'pending', 'awaiting_payment', 'active'
@@ -879,25 +879,7 @@ export default function SocietyAdminDashboard() {
             }}
           />
 
-          {/* Tab 1: Vehicles */}
-          <button
-            ref={(el) => (tabRefs.current['vehicles'] = el)}
-            onClick={() => setActiveTab('vehicles')}
-            className={`relative z-10 sm:flex-1 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 min-w-0 ${
-              activeTab === 'vehicles'
-                ? 'bg-amber-500 text-zinc-950 font-black sm:bg-transparent shadow-sm sm:shadow-none'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-            }`}
-          >
-            <Car className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'vehicles' ? 'text-zinc-950' : 'text-zinc-400'}`} />
-            <span className="truncate sm:hidden">Passes</span>
-            <span className="hidden sm:inline">Vehicle Passes</span>
-            {pendingVehicles.length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 sm:bg-zinc-950 animate-pulse shrink-0" />
-            )}
-          </button>
-
-          {/* Tab 2: Members */}
+          {/* Tab 1: Members */}
           <button
             ref={(el) => (tabRefs.current['members'] = el)}
             onClick={() => setActiveTab('members')}
@@ -911,6 +893,24 @@ export default function SocietyAdminDashboard() {
             <span className="truncate sm:hidden">Members</span>
             <span className="hidden sm:inline">Residents & Members</span>
             {pendingMembers.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-amber-400 sm:bg-zinc-950 animate-pulse shrink-0" />
+            )}
+          </button>
+
+          {/* Tab 2: Vehicles */}
+          <button
+            ref={(el) => (tabRefs.current['vehicles'] = el)}
+            onClick={() => setActiveTab('vehicles')}
+            className={`relative z-10 sm:flex-1 px-1.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 min-w-0 ${
+              activeTab === 'vehicles'
+                ? 'bg-amber-500 text-zinc-950 font-black sm:bg-transparent shadow-sm sm:shadow-none'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <Car className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'vehicles' ? 'text-zinc-950' : 'text-zinc-400'}`} />
+            <span className="truncate sm:hidden">Passes</span>
+            <span className="hidden sm:inline">Vehicle Passes</span>
+            {pendingVehicles.length > 0 && (
               <span className="w-2 h-2 rounded-full bg-amber-400 sm:bg-zinc-950 animate-pulse shrink-0" />
             )}
           </button>
