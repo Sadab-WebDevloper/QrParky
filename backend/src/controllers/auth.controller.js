@@ -103,7 +103,7 @@ const login = async (req, res, next) => {
     if (user.status !== 'approved' && user.role !== ROLES.SUPER_ADMIN) {
       return res.status(403).json({
         success: false,
-        message: `Account is currently '${user.status}'. Approval by Society Admin or Super Admin is required.`,
+        message: `Account is currently '${user.status}'. Approval by Society Adminrequired.`,
       });
     }
 
