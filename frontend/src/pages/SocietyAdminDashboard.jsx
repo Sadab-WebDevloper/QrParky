@@ -652,7 +652,7 @@ export default function SocietyAdminDashboard() {
             <div class="owner-name">${passData.ownerName || 'Resident'} • Windshield Permit</div>
             <div class="pass-footer">
               <span>🛡️ Tamper-Proof</span>
-              <span>Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}</span>
+              <span>${passData?.expiresAt ? `Expires: ${new Date(passData.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : `Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}`}</span>
             </div>
           </div>
         </body>
@@ -756,7 +756,7 @@ export default function SocietyAdminDashboard() {
       </div>
 
       {/* Stats Grid — Compact low-profile cards matching Super Admin */}
-      {stats && (
+      {stats ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
           
           {/* Residents Card */}
@@ -858,6 +858,24 @@ export default function SocietyAdminDashboard() {
             </div>
           </div>
 
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div
+              key={idx}
+              className="p-2.5 sm:p-3 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/95 dark:bg-[#121214] glass-card animate-pulse"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-3 w-20 rounded bg-zinc-200/80 dark:bg-zinc-800" />
+                <div className="w-6.5 h-6.5 rounded-lg bg-zinc-200/80 dark:bg-zinc-800 shrink-0" />
+              </div>
+              <div className="flex items-baseline justify-between mt-1 min-h-[1.75rem] sm:min-h-[2rem]">
+                <div className="h-6 sm:h-7 w-10 rounded-md bg-zinc-200/80 dark:bg-zinc-800" />
+                <div className="h-3 w-16 rounded bg-zinc-200/70 dark:bg-zinc-800/80" />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -2071,7 +2089,7 @@ export default function SocietyAdminDashboard() {
 
               <div className="mt-3 pt-2 border-t border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
                 <span>🛡️ Windshield Pass</span>
-                <span>ID: #{activeQRData.vehicleId || 'QP'}</span>
+                <span>{activeQRData?.expiresAt ? `Expires: ${new Date(activeQRData.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : `Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}`}</span>
               </div>
             </div>
 

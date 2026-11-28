@@ -366,7 +366,7 @@ export default function LandingPage() {
                 <AnimatedCounter end={99.9} duration={1700} decimals={1} suffix="%" startTrigger={statsVisible} />
               </div>
               <div className="text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400 font-semibold mt-1">
-                Security Accuracy
+                Pass Verification Rate
               </div>
             </div>
 

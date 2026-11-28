@@ -406,7 +406,7 @@ export default function MemberDashboard() {
             <div class="owner-name">${user?.name || 'Resident'} • Windshield Permit</div>
             <div class="pass-footer">
               <span>🛡️ Tamper-Proof</span>
-              <span>Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}</span>
+              <span>${activeQRData?.expiresAt ? `Expires: ${new Date(activeQRData.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : `Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}`}</span>
             </div>
           </div>
         </body>
@@ -1186,7 +1186,7 @@ export default function MemberDashboard() {
 
               <div className="text-[10px] text-zinc-400 dark:text-zinc-500 flex items-center justify-between pt-1">
                 <span>🛡️ Tamper-Proof Windshield Pass</span>
-                <span>Valid: {new Date().getFullYear()}–{new Date().getFullYear() + 1}</span>
+                <span>{activeQRData?.expiresAt ? `Expires: ${new Date(activeQRData.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : `Valid: ${new Date().getFullYear()}–${new Date().getFullYear() + 1}`}</span>
               </div>
             </div>
 
